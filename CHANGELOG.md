@@ -5,13 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2025-01-17
 
 ### Added
 - X-* vendor property preservation for round-trip fidelity
 - CLASS property parsing (PUBLIC, PRIVATE, CONFIDENTIAL)
 - rawProperties map in ICalEvent for unhandled properties
 - KashCal edge case tests (114 tests ported)
+- Google Calendar CalDAV integration tests
+- Baikal CalDAV server integration tests (184 tests)
+- Radicale CalDAV server integration tests (184 tests)
+- RFC 9253 LINK and RELATED-TO property support
+
+## [1.1.0] - 2025-01-10
+
+### Added
+- `fetchEtagsInRange()` - Lightweight etag-only queries for 96% bandwidth savings
+- `getSyncToken()` - Retrieve sync token for incremental sync
+- `EtagInfo` data class for etag results
+- 66 new tests covering advanced sync patterns
 
 ## [1.0.0] - 2024-01-15
 
