@@ -21,10 +21,11 @@ class ICalGenerator(
      * Generate iCal string for a single event.
      *
      * @param event The event to generate
-     * @param includeMethod Include METHOD:PUBLISH (required for iCloud)
+     * @param includeMethod Include METHOD:PUBLISH (some CalDAV servers like Nextcloud
+     *                      reject this for PUT operations - set to false for CalDAV)
      * @return Complete VCALENDAR string
      */
-    fun generate(event: ICalEvent, includeMethod: Boolean = true): String {
+    fun generate(event: ICalEvent, includeMethod: Boolean = false): String {
         return buildString {
             // VCALENDAR header
             appendLine("BEGIN:VCALENDAR")
