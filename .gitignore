@@ -47,6 +47,7 @@ coverage/
 
 # Documentation build
 dokka/
+docs/
 
 # Secrets (never commit these)
 *.jks
