@@ -192,7 +192,7 @@ val client = CalDavClient(
 | Provider | Quirks Handled |
 |----------|----------------|
 | **iCloud** | CDATA-wrapped responses, non-prefixed XML namespaces, regional server redirects, app-specific passwords, eventual consistency |
-| **Google Calendar** | OAuth token auth, specific date formatting |
+| **Google Calendar** | OAuth2 bearer auth, no MKCALENDAR, no VTODO |
 | **Fastmail** | Standard CalDAV with minor variations |
 | **Radicale** | Direct URL access (skip discovery), simple auth |
 | **Baikal** | sabre/dav based, standard CalDAV with nginx proxy |
@@ -595,6 +595,43 @@ val client = CalDavClient.forProvider(
 val account = client.discoverAccount("http://localhost:8081/dav.php/")
 ```
 
+### Google Calendar (OAuth2)
+
+**Google Calendar** requires OAuth2 authentication - basic auth is not supported.
+
+**Limitations:**
+- No MKCALENDAR (calendars must be created via Google Calendar UI/API)
+- No VTODO/VJOURNAL support
+- No LOCK/UNLOCK/COPY/MOVE
+
+**Usage with Bearer token:**
+```kotlin
+// Get OAuth2 access token via Google's OAuth flow
+val accessToken = "ya29.a0..." // Your OAuth2 access token
+
+// Create client with bearer auth
+val auth = DavAuth.Bearer(accessToken)
+val httpClient = WebDavClient.withAuth(auth)
+val client = CalDavClient(WebDavClient(httpClient, auth))
+
+// Google CalDAV URLs
+val baseUrl = "https://apidata.googleusercontent.com/caldav/v2"
+val calendarUrl = "$baseUrl/primary/events/" // or specific calendar ID
+
+// All operations work with bearer auth
+val events = client.fetchEventsInRange(calendarUrl, startMs, endMs)
+client.createEvent(calendarUrl, event)
+```
+
+**URL patterns:**
+| Resource | Pattern |
+|----------|---------|
+| Principal | `https://apidata.googleusercontent.com/caldav/v2/{calendarId}/user` |
+| Calendar | `https://apidata.googleusercontent.com/caldav/v2/{calendarId}/events/` |
+| Event | `https://apidata.googleusercontent.com/caldav/v2/{calendarId}/events/{uid}.ics` |
+
+**Note:** `{calendarId}` is `primary` for the main calendar or the calendar's email address found in Google Calendar settings.
+
 ## Java Interoperability
 
 iCalDAV is written in Kotlin but fully compatible with Java:
@@ -653,6 +690,10 @@ Contributions are welcome. Please open an issue to discuss significant changes b
 ./run-integration-tests.sh      # Nextcloud (184 tests)
 ./run-radicale-tests.sh         # Radicale (184 tests)
 ./run-baikal-tests.sh           # Baikal (184 tests)
+
+# Google Calendar (requires OAuth2 setup)
+./run-google-tests.sh --setup   # Show OAuth2 setup instructions
+./run-google-tests.sh           # Run tests (requires env vars)
 ```
 
 ## Security
