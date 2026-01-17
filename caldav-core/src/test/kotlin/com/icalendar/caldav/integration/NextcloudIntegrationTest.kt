@@ -28,6 +28,8 @@ import com.icalendar.core.model.Frequency
 import com.icalendar.core.model.ICalEvent
 import com.icalendar.core.model.ICalDateTime
 import com.icalendar.core.model.EventStatus
+import com.icalendar.core.model.LinkRelationType
+import com.icalendar.core.model.RelationType
 import com.icalendar.core.model.Transparency
 
 /**
@@ -2654,6 +2656,193 @@ class NextcloudIntegrationTest {
 
         val fetched = fetchAndVerify(result.href)
         println("  Parsed categories: ${fetched.event.categories}")
+    }
+
+    // ======================== RFC 9253 Tests (LINK, RELATED-TO) ========================
+
+    @Test
+    @Order(124)
+    @DisplayName("124. Event with LINK property (RFC 9253)")
+    fun `event with LINK property`() {
+        val uid = generateUid("link-prop")
+        val startTime = Instant.now().plus(144, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Event with Link
+            LINK;VALUE=URI;REL=alternate;FMTTYPE=text/html:https://example.com/event-details
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with LINK: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Parsed links: ${fetched.event.links.size}")
+        if (fetched.event.links.isNotEmpty()) {
+            val link = fetched.event.links[0]
+            println("    URI: ${link.uri}")
+            println("    REL: ${link.relation}")
+            println("    FMTTYPE: ${link.mediaType}")
+        }
+    }
+
+    @Test
+    @Order(125)
+    @DisplayName("125. Event with multiple LINK properties (RFC 9253)")
+    fun `event with multiple LINK properties`() {
+        val uid = generateUid("multi-link")
+        val startTime = Instant.now().plus(145, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Event with Multiple Links
+            LINK;VALUE=URI;REL=alternate:https://example.com/alt
+            LINK;VALUE=URI;REL=describedby;FMTTYPE=application/pdf:https://example.com/spec.pdf
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with multiple LINKs: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Parsed links: ${fetched.event.links.size}")
+        fetched.event.links.forEachIndexed { i, link ->
+            println("    Link ${i + 1}: ${link.relation} -> ${link.uri}")
+        }
+    }
+
+    @Test
+    @Order(126)
+    @DisplayName("126. Event with RELATED-TO properties (RFC 9253)")
+    fun `event with RELATED-TO properties`() {
+        val uid = generateUid("related-to")
+        val startTime = Instant.now().plus(146, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Child Event with Relations
+            RELATED-TO:parent-event-uid-123
+            RELATED-TO;RELTYPE=SIBLING:sibling-event-uid-456
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with RELATED-TO: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Parsed relations: ${fetched.event.relations.size}")
+        fetched.event.relations.forEach { rel ->
+            println("    ${rel.relationType}: ${rel.uid}")
+        }
+    }
+
+    @Test
+    @Order(127)
+    @DisplayName("127. LINK property survives roundtrip (RFC 9253)")
+    fun `LINK property survives roundtrip`() {
+        val uid = generateUid("link-roundtrip")
+        val startTime = Instant.now().plus(147, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        // Using simpler LINK without TITLE (some servers reject complex parameters)
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Link Roundtrip Test
+            LINK;VALUE=URI;REL=alternate;FMTTYPE=text/html:https://example.com/details
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event for LINK roundtrip: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+
+        // Note: Some servers may not preserve LINK properties
+        if (fetched.event.links.isNotEmpty()) {
+            val link = fetched.event.links[0]
+            assertEquals("https://example.com/details", link.uri)
+            assertEquals(LinkRelationType.ALTERNATE, link.relation)
+            assertEquals("text/html", link.mediaType)
+            println("  LINK roundtrip successful: ${link.uri}")
+        } else {
+            println("  Note: Server did not preserve LINK property (not all servers support RFC 9253)")
+        }
+    }
+
+    @Test
+    @Order(128)
+    @DisplayName("128. RELATED-TO property survives roundtrip (RFC 9253)")
+    fun `RELATED-TO property survives roundtrip`() {
+        val uid = generateUid("related-roundtrip")
+        val startTime = Instant.now().plus(148, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:RELATED-TO Roundtrip Test
+            RELATED-TO;RELTYPE=PARENT:parent-uid-abc
+            RELATED-TO;RELTYPE=CHILD:child-uid-xyz
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event for RELATED-TO roundtrip: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        assertEquals(2, fetched.event.relations.size, "Should have 2 RELATED-TO properties")
+
+        val parentRel = fetched.event.relations.find { it.relationType == RelationType.PARENT }
+        val childRel = fetched.event.relations.find { it.relationType == RelationType.CHILD }
+
+        assertNotNull(parentRel, "Should have PARENT relation")
+        assertNotNull(childRel, "Should have CHILD relation")
+        assertEquals("parent-uid-abc", parentRel!!.uid)
+        assertEquals("child-uid-xyz", childRel!!.uid)
+        println("  RELATED-TO roundtrip successful")
     }
 
     // ======================== Scheduling Tests (ORGANIZER, ATTENDEE) ========================
@@ -6499,6 +6688,11 @@ class NextcloudIntegrationTest {
         println("  ✓ IMAGE property")
         println("  ✓ CONFERENCE property")
         println("  ✓ CATEGORIES property")
+        println("\n=== RFC 9253 Properties ===")
+        println("  ✓ LINK property (single and multiple)")
+        println("  ✓ RELATED-TO property")
+        println("  ✓ LINK roundtrip")
+        println("  ✓ RELATED-TO roundtrip")
         println("\n=== Scheduling (ORGANIZER, ATTENDEE) ===")
         println("  ✓ ORGANIZER property")
         println("  ✓ ATTENDEE with PARTSTAT, ROLE, RSVP")

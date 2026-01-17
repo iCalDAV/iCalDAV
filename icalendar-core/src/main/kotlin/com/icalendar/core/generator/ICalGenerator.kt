@@ -144,6 +144,16 @@ class ICalGenerator(
             appendConferenceProperty(conference)
         }
 
+        // LINK properties (RFC 9253)
+        event.links.forEach { link ->
+            appendLine(link.toICalString())
+        }
+
+        // RELATED-TO properties (RFC 9253)
+        event.relations.forEach { relation ->
+            appendLine(relation.toICalString())
+        }
+
         // URL
         event.url?.let {
             appendLine("URL:$it")

@@ -7,6 +7,10 @@ import com.icalendar.core.model.ICalImage
 import com.icalendar.core.model.ICalConference
 import com.icalendar.core.model.ConferenceFeature
 import com.icalendar.core.model.AlarmProximity
+import com.icalendar.core.model.ICalLink
+import com.icalendar.core.model.LinkRelationType
+import com.icalendar.core.model.ICalRelation
+import com.icalendar.core.model.RelationType
 import net.fortuna.ical4j.data.CalendarBuilder
 import net.fortuna.ical4j.model.Component
 import net.fortuna.ical4j.model.Property
@@ -190,6 +194,16 @@ class ICalParser {
                 parseConferenceProperty(confProp)
             }
 
+            // Parse LINK properties (RFC 9253)
+            val links = vevent.getProperties<Property>("LINK").mapNotNull { linkProp ->
+                parseLinkProperty(linkProp)
+            }
+
+            // Parse RELATED-TO properties (RFC 9253)
+            val relations = vevent.getProperties<Property>("RELATED-TO").mapNotNull { relProp ->
+                parseRelatedToProperty(relProp)
+            }
+
             // Parse ORGANIZER
             val organizer = parseOrganizer(vevent)
 
@@ -235,6 +249,8 @@ class ICalParser {
                 url = urlValue,
                 images = images,
                 conferences = conferences,
+                links = links,
+                relations = relations,
                 rawProperties = emptyMap()
             )
 
@@ -545,6 +561,68 @@ class ICalParser {
             features = features,
             label = label,
             language = language
+        )
+    }
+
+    // ============ RFC 9253 Property Parsing ============
+
+    /**
+     * Parse LINK property (RFC 9253).
+     *
+     * Format: LINK;REL=alternate;FMTTYPE=text/html;TITLE="Details":https://example.com/event
+     *
+     * @param prop The LINK property from ical4j
+     * @return Parsed ICalLink or null if invalid
+     */
+    private fun parseLinkProperty(prop: Property): ICalLink? {
+        val uri = prop.value
+        if (uri.isNullOrBlank()) return null
+
+        val rel = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("REL")
+            ?.value
+        val fmttype = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("FMTTYPE")
+            ?.value
+        val title = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("TITLE")
+            ?.value?.trim('"')
+        val label = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("LABEL")
+            ?.value
+        val language = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("LANGUAGE")
+            ?.value
+        val gap = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("GAP")
+            ?.value
+
+        return ICalLink.fromParameters(
+            uri = uri,
+            rel = rel,
+            fmttype = fmttype,
+            title = title,
+            label = label,
+            language = language,
+            gap = gap
+        )
+    }
+
+    /**
+     * Parse RELATED-TO property (RFC 9253).
+     *
+     * Format: RELATED-TO;RELTYPE=PARENT:parent-event-uid
+     *
+     * @param prop The RELATED-TO property from ical4j
+     * @return Parsed ICalRelation or null if invalid
+     */
+    private fun parseRelatedToProperty(prop: Property): ICalRelation? {
+        val uid = prop.value
+        if (uid.isNullOrBlank()) return null
+
+        val reltype = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("RELTYPE")
+            ?.value
+        val gap = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("GAP")
+            ?.value
+
+        return ICalRelation.fromParameters(
+            uid = uid,
+            reltype = reltype,
+            gap = gap
         )
     }
 }

@@ -32,13 +32,23 @@ class ICalGeneratorTest {
 
         val icalString = generator.generate(event)
 
-        // iCloud requires these
+        // Required properties for CalDAV
         assertTrue(icalString.contains("VERSION:2.0"))
         assertTrue(icalString.contains("PRODID:"))
         assertTrue(icalString.contains("CALSCALE:GREGORIAN"))
-        assertTrue(icalString.contains("METHOD:PUBLISH"))
+        // METHOD is excluded by default for CalDAV PUT (some servers reject it)
+        assertFalse(icalString.contains("METHOD:PUBLISH"))
         assertTrue(icalString.contains("SEQUENCE:"))
         assertTrue(icalString.contains("STATUS:"))
+    }
+
+    @Test
+    fun `generated iCal with includeMethod has METHOD property`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event, includeMethod = true)
+
+        assertTrue(icalString.contains("METHOD:PUBLISH"))
     }
 
     @Test

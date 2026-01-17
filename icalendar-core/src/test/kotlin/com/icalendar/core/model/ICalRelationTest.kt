@@ -150,7 +150,8 @@ class ICalRelationTest {
             val link = ICalLink(uri = "https://example.com/event")
             val ical = link.toICalString()
 
-            assertEquals("LINK:https://example.com/event", ical)
+            // VALUE=URI is required for proper parsing by ical4j
+            assertEquals("LINK;VALUE=URI:https://example.com/event", ical)
         }
 
         @Test
@@ -161,7 +162,7 @@ class ICalRelationTest {
             )
             val ical = link.toICalString()
 
-            assertEquals("LINK;REL=alternate:https://example.com/event", ical)
+            assertEquals("LINK;VALUE=URI;REL=alternate:https://example.com/event", ical)
         }
 
         @Test
@@ -172,7 +173,7 @@ class ICalRelationTest {
             )
             val ical = link.toICalString()
 
-            assertEquals("LINK;FMTTYPE=text/html:https://example.com/event.html", ical)
+            assertEquals("LINK;VALUE=URI;FMTTYPE=text/html:https://example.com/event.html", ical)
         }
 
         @Test
