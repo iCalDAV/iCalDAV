@@ -228,6 +228,98 @@ class ICalGeneratorTest {
         assertTrue(icalString.contains("TZID:Asia/Tokyo"))
     }
 
+    // Apple VALARM extension tests
+
+    @Test
+    fun `generate includes Apple VALARM extensions by default`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-15),
+            triggerAbsolute = null,
+            description = "Reminder",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("X-WR-ALARMUID:"))
+        assertTrue(icalString.contains("X-APPLE-DEFAULT-ALARM:FALSE"))
+    }
+
+    @Test
+    fun `generate excludes Apple VALARM extensions when disabled`() {
+        val generatorNoApple = ICalGenerator(includeAppleExtensions = false)
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-15),
+            triggerAbsolute = null,
+            description = "Reminder",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generatorNoApple.generate(event)
+
+        assertFalse(icalString.contains("X-WR-ALARMUID:"))
+        assertFalse(icalString.contains("X-APPLE-DEFAULT-ALARM:"))
+    }
+
+    @Test
+    fun `generate VALARM always has UID`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-30),
+            triggerAbsolute = null,
+            description = "Test",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        // Should have UID in VALARM
+        val valarmSection = icalString.substringAfter("BEGIN:VALARM").substringBefore("END:VALARM")
+        assertTrue(valarmSection.contains("UID:"))
+    }
+
+    @Test
+    fun `generate VALARM X-WR-ALARMUID matches UID`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-10),
+            triggerAbsolute = null,
+            uid = "test-alarm-uid-123",
+            description = "Test",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("UID:test-alarm-uid-123"))
+        assertTrue(icalString.contains("X-WR-ALARMUID:test-alarm-uid-123"))
+    }
+
+    @Test
+    fun `generate VALARM omits X-APPLE-DEFAULT-ALARM when defaultAlarm is true`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-15),
+            triggerAbsolute = null,
+            description = "Default Alarm",
+            summary = null,
+            defaultAlarm = true
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        // Should have X-WR-ALARMUID but NOT X-APPLE-DEFAULT-ALARM:FALSE
+        assertTrue(icalString.contains("X-WR-ALARMUID:"))
+        assertFalse(icalString.contains("X-APPLE-DEFAULT-ALARM:FALSE"))
+    }
+
     @Test
     fun `generate UTC event has no VTIMEZONE`() {
         val utcStart = ICalDateTime.parse("20231215T140000Z")

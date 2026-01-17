@@ -2,7 +2,7 @@ name: Publish to Maven Central
 
 on:
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -19,45 +19,16 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Prepare GPG key
-        run: |
-          echo "$GPG_KEY" > /tmp/signing-key.asc
-          echo "signingKey<<EOF" >> $GITHUB_ENV
-          cat /tmp/signing-key.asc >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+      - name: Build and Test
+        run: ./gradlew build --no-daemon
+
+      - name: Publish to Maven Central
         env:
-          GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-
-      - name: Build and sign all modules
+          CENTRAL_PORTAL_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          CENTRAL_PORTAL_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          ./gradlew :icalendar-core:publishMavenPublicationToLocalRepository \
-                    :webdav-core:publishMavenPublicationToLocalRepository \
-                    :caldav-core:publishMavenPublicationToLocalRepository \
-                    :caldav-sync:publishMavenPublicationToLocalRepository \
-                    :ics-subscription:publishMavenPublicationToLocalRepository \
-                    -PsigningKey="$signingKey" \
-                    -PsigningPassword="${{ secrets.GPG_PASSPHRASE }}"
-
-      - name: Create bundle for Central Portal
-        run: |
-          cd build/local-repo
-          zip -r ../../icaldav-bundle.zip .
-
-      - name: Upload bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: maven-central-bundle
-          path: icaldav-bundle.zip
-
-      - name: Upload to Central Portal
-        run: |
-          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
-            -u "${{ secrets.CENTRAL_PORTAL_USERNAME }}:${{ secrets.CENTRAL_PORTAL_PASSWORD }}" \
-            -F "bundle=@icaldav-bundle.zip" \
-            "https://central.sonatype.com/api/v1/publisher/upload")
-          echo "$RESPONSE"
-          if echo "$RESPONSE" | grep -q "error"; then
-            exit 1
-          fi
+          ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository --no-daemon

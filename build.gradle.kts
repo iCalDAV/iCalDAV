@@ -3,6 +3,7 @@ plugins {
     id("com.android.library") version "8.2.0" apply false
     id("org.jetbrains.dokka") version "1.9.10" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.4" apply false
+    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
     id("jacoco")
     id("signing")
     id("maven-publish")
@@ -13,12 +14,24 @@ allprojects {
     version = "1.2.0"
 }
 
+// Maven Central publishing via Sonatype Central Portal
+nexusPublishing {
+    repositories {
+        sonatype {
+            nexusUrl.set(uri("https://central.sonatype.com/api/v1/publisher/"))
+            snapshotRepositoryUrl.set(uri("https://central.sonatype.com/api/v1/publisher/"))
+            username.set(System.getenv("CENTRAL_PORTAL_USERNAME") ?: findProperty("central.portal.username") as String?)
+            password.set(System.getenv("CENTRAL_PORTAL_PASSWORD") ?: findProperty("central.portal.password") as String?)
+        }
+    }
+}
+
 subprojects {
     apply(plugin = "io.gitlab.arturbosch.detekt")
     apply(plugin = "jacoco")
     apply(plugin = "maven-publish")
 
-    // Configure GitHub Packages for all subprojects
+    // Configure GitHub Packages repository for all subprojects
     afterEvaluate {
         extensions.findByType<PublishingExtension>()?.apply {
             repositories {

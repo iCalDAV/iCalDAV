@@ -18,7 +18,12 @@ import java.time.format.DateTimeFormatter
  * with calendar clients that don't recognize IANA timezone IDs.
  */
 class ICalGenerator(
-    private val prodId: String = "-//iCalDAV//EN"
+    private val prodId: String = "-//iCalDAV//EN",
+    /**
+     * Include Apple-specific extensions for better iCloud compatibility.
+     * When true, adds X-WR-ALARMUID and X-APPLE-DEFAULT-ALARM to VALARM.
+     */
+    private val includeAppleExtensions: Boolean = true
 ) {
     private val vtimezoneGenerator = VTimezoneGenerator()
     /**
@@ -242,8 +247,19 @@ class ICalGenerator(
         appendLine("BEGIN:VALARM")
 
         // RFC 9074: UID for alarm identification
-        alarm.uid?.let {
-            appendLine("UID:$it")
+        // Generate a UID if not provided (needed for Apple extensions)
+        val alarmUid = alarm.uid ?: java.util.UUID.randomUUID().toString().uppercase()
+        appendLine("UID:$alarmUid")
+
+        // Apple-specific extensions for better iCloud compatibility
+        if (includeAppleExtensions) {
+            // X-WR-ALARMUID: iCloud alarm identifier (same as UID)
+            appendLine("X-WR-ALARMUID:$alarmUid")
+            // X-APPLE-DEFAULT-ALARM: Prevents iPhone from treating this as a
+            // "default" alarm that can be merged with calendar defaults
+            if (!alarm.defaultAlarm) {
+                appendLine("X-APPLE-DEFAULT-ALARM:FALSE")
+            }
         }
 
         appendLine("ACTION:${alarm.action.name}")
@@ -283,6 +299,7 @@ class ICalGenerator(
             appendLine("RELATED-TO:$it")
         }
 
+        // RFC 9074: DEFAULT-ALARM
         if (alarm.defaultAlarm) {
             appendLine("DEFAULT-ALARM:TRUE")
         }
