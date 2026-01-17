@@ -18,7 +18,7 @@ Built for production use with real-world CalDAV servers including iCloud, Google
 | **Offline support is complex** | Built-in operation queue with automatic coalescing |
 | **Conflict resolution** | Multiple strategies: server-wins, local-wins, newest-wins, manual merge |
 | **Server differences** | Auto-detected provider quirks for iCloud, Google, Fastmail |
-| **Reliability concerns** | 900+ tests, production-proven with real CalDAV servers |
+| **Reliability concerns** | 1100+ tests, production-proven with real CalDAV servers |
 
 ## Features
 
@@ -301,7 +301,8 @@ val icalString = generator.generate(event)
 | **Recurrence** | RRULE, EXDATE, RECURRENCE-ID |
 | **People** | ORGANIZER, ATTENDEE |
 | **Alerts** | VALARM (DISPLAY, EMAIL, AUDIO) |
-| **Extended** | CATEGORIES, URL, ATTACH, IMAGE, CONFERENCE |
+| **Extended** | CATEGORIES, URL, ATTACH, IMAGE, CONFERENCE, CLASS |
+| **Vendor** | X-* properties preserved for round-trip fidelity |
 
 ### Timezone Handling
 
@@ -676,7 +677,7 @@ Contributions are welcome. Please open an issue to discuss significant changes b
 ### Running Tests
 
 ```bash
-# Full test suite (900+ tests)
+# Full test suite (1100+ tests)
 ./gradlew test
 
 # Specific module
