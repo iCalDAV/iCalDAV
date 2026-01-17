@@ -16,6 +16,23 @@ allprojects {
 subprojects {
     apply(plugin = "io.gitlab.arturbosch.detekt")
     apply(plugin = "jacoco")
+    apply(plugin = "maven-publish")
+
+    // Configure GitHub Packages for all subprojects
+    afterEvaluate {
+        extensions.findByType<PublishingExtension>()?.apply {
+            repositories {
+                maven {
+                    name = "GitHubPackages"
+                    url = uri("https://maven.pkg.github.com/iCalDAV/iCalDAV")
+                    credentials {
+                        username = System.getenv("GITHUB_ACTOR") ?: findProperty("gpr.user") as String?
+                        password = System.getenv("GITHUB_TOKEN") ?: findProperty("gpr.key") as String?
+                    }
+                }
+            }
+        }
+    }
 
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
         kotlinOptions {

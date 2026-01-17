@@ -81,9 +81,9 @@ publishing {
 
 signing {
     val signingKey = findProperty("signingKey") as String? ?: System.getenv("SIGNING_KEY")
-    val signingPassword = findProperty("signingPassword") as String? ?: System.getenv("SIGNING_PASSWORD")
+    val signingPassword = findProperty("signingPassword") as String? ?: System.getenv("SIGNING_PASSWORD") ?: ""
 
-    if (signingKey != null && signingPassword != null) {
+    if (signingKey != null) {
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications["maven"])
     }
