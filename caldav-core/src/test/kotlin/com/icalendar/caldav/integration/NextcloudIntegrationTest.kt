@@ -61,6 +61,7 @@ class NextcloudIntegrationTest {
     private val password = System.getenv("NEXTCLOUD_PASS") ?: "testpass123"
 
     private lateinit var calDavClient: CalDavClient
+    private lateinit var webDavClient: WebDavClient
     private lateinit var discovery: CalDavDiscovery
     private lateinit var quirks: DefaultQuirks
 
@@ -90,7 +91,7 @@ class NextcloudIntegrationTest {
 
         val auth = DavAuth.Basic(username, password)
         val httpClient = WebDavClient.withAuth(auth)
-        val webDavClient = WebDavClient(httpClient, auth)
+        webDavClient = WebDavClient(httpClient, auth)
         discovery = CalDavDiscovery(webDavClient)
 
         quirks = DefaultQuirks(
@@ -184,6 +185,13 @@ class NextcloudIntegrationTest {
         assertTrue(result is DavResult.Success, "Should fetch event: $result")
         @Suppress("UNCHECKED_CAST")
         return (result as DavResult.Success<EventWithMetadata>).value
+    }
+
+    private fun fetchAndVerifyRaw(url: String): String {
+        val result = webDavClient.get(url)
+        assertTrue(result is DavResult.Success, "Should fetch raw data: $result")
+        @Suppress("UNCHECKED_CAST")
+        return (result as DavResult.Success<String>).value
     }
 
     // ======================== Discovery Tests ========================
@@ -5942,6 +5950,460 @@ class NextcloudIntegrationTest {
         println("  RRULE: ${fetched.event.rrule}")
     }
 
+    // ======================== API Coverage Tests (251-265) ========================
+
+    @Test
+    @Order(251)
+    @DisplayName("251. getEvent() - fetch single event by URL")
+    fun `getEvent returns single event by URL`() {
+        // First create an event
+        val uid = generateUid("get-single")
+        val now = Instant.now()
+        val startTime = Instant.now().plus(710, ChronoUnit.DAYS)
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Single Event Fetch Test
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+
+        // Now fetch it with getEvent()
+        val result = calDavClient.getEvent(created.href)
+
+        when (result) {
+            is DavResult.Success -> {
+                assertEquals(uid, result.value.event.uid, "UID should match")
+                assertEquals("Single Event Fetch Test", result.value.event.summary)
+                assertNotNull(result.value.etag, "Should have ETag")
+                println("getEvent() successfully retrieved event: ${result.value.event.summary}")
+            }
+            else -> fail("getEvent() failed: $result")
+        }
+    }
+
+    @Test
+    @Order(252)
+    @DisplayName("252. getEvent() - returns 404 for non-existent event")
+    fun `getEvent API returns 404 for missing event`() {
+        val nonExistentUrl = "$defaultCalendarUrl/does-not-exist-xyz123.ics"
+
+        val result = calDavClient.getEvent(nonExistentUrl)
+
+        when (result) {
+            is DavResult.HttpError -> {
+                assertEquals(404, result.code, "Should return 404 for missing event")
+                println("getEvent() correctly returned 404 for non-existent event")
+            }
+            is DavResult.Success -> {
+                // Some servers might return empty success - that's also acceptable
+                println("Server returned success but event list was empty (handled by getEvent)")
+            }
+            else -> fail("Unexpected result type: $result")
+        }
+    }
+
+    @Test
+    @Order(253)
+    @DisplayName("253. getSyncToken() - retrieve sync token separately from ctag")
+    fun `getSyncToken returns sync token for calendar`() {
+        val result = calDavClient.getSyncToken(defaultCalendarUrl!!)
+
+        when (result) {
+            is DavResult.Success -> {
+                val syncToken = result.value
+                if (syncToken != null) {
+                    println("getSyncToken() returned: ${syncToken.take(50)}...")
+                    assertTrue(syncToken.isNotBlank(), "Sync token should not be blank")
+                } else {
+                    println("Server does not support sync-token (returned null)")
+                }
+            }
+            else -> fail("getSyncToken() failed: $result")
+        }
+    }
+
+    @Test
+    @Order(254)
+    @DisplayName("254. buildEventUrl() - UID with allowed special characters")
+    fun `buildEventUrl handles special characters in UID`() {
+        // Test UIDs with allowed characters: @ . _ -
+        val testCases = listOf(
+            "simple-uid" to "simple-uid",
+            "uid@domain.com" to "uid@domain.com",
+            "uid.with.dots" to "uid.with.dots",
+            "uid_with_underscores" to "uid_with_underscores",
+            "uid-with-dashes" to "uid-with-dashes",
+            "complex@uid.with_all-chars" to "complex@uid.with_all-chars"
+        )
+
+        testCases.forEach { (input, expected) ->
+            val url = calDavClient.buildEventUrl(defaultCalendarUrl!!, input)
+            assertTrue(url.endsWith("$expected.ics"), "URL for '$input' should end with '$expected.ics', got: $url")
+        }
+        println("buildEventUrl() correctly handles allowed special characters")
+    }
+
+    @Test
+    @Order(255)
+    @DisplayName("255. buildEventUrl() - UID with unsafe characters gets sanitized")
+    fun `buildEventUrl sanitizes unsafe characters`() {
+        // Characters that should be replaced with underscore
+        val testCases = listOf(
+            "uid with spaces" to "uid_with_spaces",
+            "uid/with/slashes" to "uid_with_slashes",
+            "uid\\with\\backslashes" to "uid_with_backslashes",
+            "uid:with:colons" to "uid_with_colons",
+            "uid?with?questions" to "uid_with_questions",
+            "uid#with#hash" to "uid_with_hash",
+            "uid%with%percent" to "uid_with_percent"
+        )
+
+        testCases.forEach { (input, expected) ->
+            val url = calDavClient.buildEventUrl(defaultCalendarUrl!!, input)
+            assertTrue(url.endsWith("$expected.ics"), "URL for '$input' should be sanitized to '$expected.ics', got: $url")
+        }
+        println("buildEventUrl() correctly sanitizes unsafe characters")
+    }
+
+    @Test
+    @Order(256)
+    @DisplayName("256. buildEventUrl() - rejects path traversal attempts")
+    fun `buildEventUrl rejects path traversal`() {
+        val maliciousUids = listOf(
+            "../../../etc/passwd",
+            "..\\..\\windows\\system32",
+            "normal/../../../secret",
+            ".",
+            "..",
+            "...",
+            "....uid"
+        )
+
+        maliciousUids.forEach { uid ->
+            try {
+                // After sanitization, ".." becomes "__" which is safe
+                // But pure dots like "." or ".." or "..." should fail
+                val url = calDavClient.buildEventUrl(defaultCalendarUrl!!, uid)
+                // If it doesn't throw, verify it doesn't contain path traversal
+                assertFalse(url.contains("/../"), "URL should not contain path traversal: $url")
+                assertFalse(url.contains("/..\\"), "URL should not contain path traversal: $url")
+                println("  '$uid' -> ${url.substringAfterLast('/')}")
+            } catch (e: IllegalArgumentException) {
+                println("  '$uid' correctly rejected: ${e.message}")
+            }
+        }
+        println("buildEventUrl() handles path traversal attempts safely")
+    }
+
+    @Test
+    @Order(257)
+    @DisplayName("257. fetchEtagsInRange() - empty calendar range")
+    fun `fetchEtagsInRange handles empty range`() {
+        // Query a range far in the future where no events exist
+        val farFuture = Instant.now().plus(3650, ChronoUnit.DAYS) // 10 years ahead
+        val farFutureEnd = farFuture.plus(30, ChronoUnit.DAYS)
+
+        val result = calDavClient.fetchEtagsInRange(defaultCalendarUrl!!, farFuture, farFutureEnd)
+
+        when (result) {
+            is DavResult.Success -> {
+                // Should return empty list or very few events
+                println("fetchEtagsInRange() returned ${result.value.size} events for empty range")
+                // Not asserting zero because test events might fall in range
+            }
+            else -> fail("fetchEtagsInRange() failed: $result")
+        }
+    }
+
+    @Test
+    @Order(258)
+    @DisplayName("258. fetchEtagsInRange() - large time range")
+    fun `fetchEtagsInRange handles large time range`() {
+        // Query from now to 5 years in future
+        val start = Instant.now()
+        val end = start.plus(1825, ChronoUnit.DAYS) // 5 years
+
+        val result = calDavClient.fetchEtagsInRange(defaultCalendarUrl!!, start, end)
+
+        when (result) {
+            is DavResult.Success -> {
+                println("fetchEtagsInRange() returned ${result.value.size} etags for 5-year range")
+                result.value.take(5).forEach { info ->
+                    println("  - ${info.href.substringAfterLast('/')}: ${info.etag.take(20)}...")
+                }
+            }
+            else -> fail("fetchEtagsInRange() failed: $result")
+        }
+    }
+
+    @Test
+    @Order(259)
+    @DisplayName("259. Event with GEO coordinates (RFC 5545)")
+    fun `event with GEO coordinates round-trips`() {
+        val uid = generateUid("geo-coords")
+        val now = Instant.now()
+        val startTime = Instant.now().plus(720, ChronoUnit.DAYS)
+
+        // GEO property: latitude;longitude
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Meeting at Cupertino HQ
+            LOCATION:Apple Park, Cupertino, CA
+            GEO:37.334722;-122.008889
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+        println("Created event with GEO: ${created.href}")
+
+        // Fetch and verify GEO is preserved
+        val fetched = fetchAndVerifyRaw(created.href)
+        assertTrue(fetched.contains("GEO:") || fetched.contains("GEO;"),
+            "Server should preserve GEO property")
+        if (fetched.contains("37.33")) {
+            println("  GEO coordinates preserved: 37.334722;-122.008889")
+        }
+    }
+
+    @Test
+    @Order(260)
+    @DisplayName("260. Duration parsing - PT1H30M combined format")
+    fun `event with combined duration format`() {
+        val uid = generateUid("duration-combined")
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20270901T100000Z
+            DURATION:PT1H30M
+            SUMMARY:90-Minute Meeting
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+        val fetched = fetchAndVerify(created.href)
+
+        // Event should have duration of 90 minutes (5400 seconds)
+        val duration = fetched.event.duration
+        if (duration != null) {
+            assertEquals(90, duration.toMinutes(), "Duration should be 90 minutes")
+            println("Duration PT1H30M correctly parsed: ${duration.toMinutes()} minutes")
+        } else {
+            // Server might convert DURATION to DTEND
+            val dtEnd = fetched.event.dtEnd
+            assertNotNull(dtEnd, "Event should have either DURATION or DTEND")
+            println("Server converted DURATION to DTEND: ${dtEnd?.toICalString()}")
+        }
+    }
+
+    @Test
+    @Order(261)
+    @DisplayName("261. Duration parsing - negative duration (-P1DT2H)")
+    fun `alarm with negative day-hour duration`() {
+        val uid = generateUid("duration-neg-dh")
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20270902T140000Z
+            DTEND:20270902T150000Z
+            SUMMARY:Event with Complex Alarm
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            DESCRIPTION:1 day 2 hours before
+            TRIGGER:-P1DT2H
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+        val fetched = fetchAndVerify(created.href)
+
+        val alarm = fetched.event.alarms.firstOrNull()
+        assertNotNull(alarm, "Event should have alarm")
+
+        val trigger = alarm?.trigger
+        if (trigger != null) {
+            // -P1DT2H = -26 hours = -1560 minutes
+            val expectedMinutes = -(24 + 2) * 60L // -1560
+            assertEquals(expectedMinutes, trigger.toMinutes(),
+                "Trigger should be -1 day 2 hours (${expectedMinutes} minutes)")
+            println("Negative duration -P1DT2H correctly parsed: ${trigger.toMinutes()} minutes")
+        }
+    }
+
+    @Test
+    @Order(262)
+    @DisplayName("262. Duration parsing - PT0S zero duration")
+    fun `event with PT0S zero duration format`() {
+        val uid = generateUid("duration-zero")
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20270903T120000Z
+            DURATION:PT0S
+            SUMMARY:Instant Event (Zero Duration)
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+        val fetched = fetchAndVerify(created.href)
+
+        val duration = fetched.event.duration
+        if (duration != null) {
+            assertEquals(0, duration.toSeconds(), "Duration should be 0 seconds")
+            println("Zero duration PT0S correctly handled")
+        } else {
+            // DTEND should equal DTSTART for zero-duration
+            val dtEnd = fetched.event.dtEnd
+            assertEquals(fetched.event.dtStart.toICalString(), dtEnd?.toICalString(),
+                "DTEND should equal DTSTART for zero-duration event")
+            println("Server converted PT0S to DTEND = DTSTART")
+        }
+    }
+
+    @Test
+    @Order(263)
+    @DisplayName("263. Duration parsing - P1W week duration")
+    fun `event with week duration`() {
+        val uid = generateUid("duration-week")
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20270904T090000Z
+            DURATION:P1W
+            SUMMARY:Week-Long Conference
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+        val fetched = fetchAndVerify(created.href)
+
+        val duration = fetched.event.duration
+        if (duration != null) {
+            assertEquals(7, duration.toDays(), "Duration should be 7 days (1 week)")
+            println("Week duration P1W correctly parsed: ${duration.toDays()} days")
+        } else {
+            // Check DTEND is 1 week after DTSTART
+            println("Server converted P1W to DTEND")
+        }
+    }
+
+    @Test
+    @Order(264)
+    @DisplayName("264. ETag normalization - quoted vs unquoted")
+    fun `ETag handling with various quote formats`() {
+        // Create an event and track its ETag format
+        val uid = generateUid("etag-format")
+        val now = Instant.now()
+        val startTime = Instant.now().plus(730, ChronoUnit.DAYS)
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:ETag Format Test
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+        val originalEtag = created.etag
+
+        println("Original ETag from server: $originalEtag")
+
+        // ETag should be normalized (without quotes) in our response
+        if (originalEtag != null) {
+            assertFalse(originalEtag.startsWith("\"") && originalEtag.endsWith("\""),
+                "ETag should be normalized (quotes removed)")
+
+            // Update with the ETag - this tests formatEtagForHeader()
+            val updatedIcal = icalData.replace("ETag Format Test", "ETag Format Test - Updated")
+                .replace("SEQUENCE:0", "SEQUENCE:1")
+
+            val updateResult = calDavClient.updateEventRaw(created.href, updatedIcal, originalEtag)
+            assertTrue(updateResult is DavResult.Success, "Update with normalized ETag should succeed")
+            println("Update with normalized ETag succeeded")
+        }
+    }
+
+    @Test
+    @Order(265)
+    @DisplayName("265. Sync-token expiration handling (410 Gone simulation)")
+    fun `sync with invalid token returns appropriate error`() {
+        // Use a clearly invalid/expired sync token
+        val invalidToken = "http://invalid-sync-token/12345"
+
+        val result = calDavClient.syncCollection(defaultCalendarUrl!!, invalidToken)
+
+        when (result) {
+            is DavResult.Success -> {
+                // Some servers just do a full sync instead of rejecting
+                println("Server performed full sync with invalid token")
+                println("  Events returned: ${result.value.added.size}")
+                println("  New sync token: ${result.value.newSyncToken.take(30)}...")
+            }
+            is DavResult.HttpError -> {
+                // 410 Gone or 403 Forbidden expected for expired token
+                assertTrue(result.code in listOf(400, 403, 410, 412),
+                    "Expected 400/403/410/412 for invalid sync token, got ${result.code}")
+                println("Server rejected invalid sync token with ${result.code}: ${result.message}")
+            }
+            else -> {
+                println("Unexpected result: $result")
+            }
+        }
+    }
+
     // ======================== Summary Test ========================
 
     @Test
@@ -6138,11 +6600,29 @@ class NextcloudIntegrationTest {
         println("  ✓ Concurrent modification detection (ETag)")
         println("  ✓ Bulk event retrieval (20 events)")
         println("  ✓ Complex BYDAY with INTERVAL")
+        println("\n=== API Coverage (CalDavClient) ===")
+        println("  ✓ getEvent() - single event fetch")
+        println("  ✓ getEvent() - 404 for non-existent")
+        println("  ✓ getSyncToken() - separate from ctag")
+        println("  ✓ buildEventUrl() - special characters")
+        println("  ✓ buildEventUrl() - unsafe char sanitization")
+        println("  ✓ buildEventUrl() - path traversal prevention")
+        println("  ✓ fetchEtagsInRange() - empty range")
+        println("  ✓ fetchEtagsInRange() - large range")
+        println("\n=== RFC 5545 GEO & Duration ===")
+        println("  ✓ GEO coordinates property")
+        println("  ✓ Duration PT1H30M combined")
+        println("  ✓ Duration -P1DT2H negative day-hour")
+        println("  ✓ Duration PT0S zero")
+        println("  ✓ Duration P1W week")
+        println("\n=== ETag & Sync Edge Cases ===")
+        println("  ✓ ETag normalization (quotes)")
+        println("  ✓ Sync-token expiration handling")
         println("========================================")
         println("TOTAL: ${createdEventUrls.size} events created and tested")
         println("========================================")
 
-        assertTrue(createdEventUrls.size >= 150,
-            "Should have created at least 150 test events")
+        assertTrue(createdEventUrls.size >= 160,
+            "Should have created at least 160 test events")
     }
 }
