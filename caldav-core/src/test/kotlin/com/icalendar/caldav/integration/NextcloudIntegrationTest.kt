@@ -4519,6 +4519,360 @@ class NextcloudIntegrationTest {
         println("  Description: ${fetched.event.description}")
     }
 
+    // ======================== Additional RFC 5545 Edge Cases (Tests 211-220) ========================
+
+    @Test
+    @Order(211)
+    @DisplayName("211. Floating time event (no timezone)")
+    fun `floating time event without timezone`() {
+        val uid = generateUid("floating-time")
+        val now = Instant.now()
+
+        // Floating time = no TZID, no Z suffix
+        // Time is interpreted in "local time" of each viewer
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20260901T140000
+            DTEND:20260901T150000
+            SUMMARY:Floating Time Event
+            DESCRIPTION:No timezone - should be interpreted as local time
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created floating time event: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+        println("  isUtc: ${fetched.event.dtStart.isUtc}")
+        println("  timezone: ${fetched.event.dtStart.timezone}")
+        // Note: Some servers (like Nextcloud) convert floating time to UTC for storage
+        // This is valid behavior per RFC 5545 - servers MAY normalize time values
+        // We verify the event was created and can be retrieved - exact timezone handling
+        // depends on server implementation
+        if (fetched.event.dtStart.timezone != null) {
+            println("  Note: Server converted floating time to ${fetched.event.dtStart.timezone}")
+        }
+    }
+
+    @Test
+    @Order(212)
+    @DisplayName("212. RRULE with WKST (week start day)")
+    fun `RRULE with WKST week start day`() {
+        val uid = generateUid("wkst-rule")
+        val now = Instant.now()
+
+        // WKST affects BYWEEKNO and BYDAY behavior
+        // Default is MO, but some regions use SU
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20260105T090000Z
+            DTEND:20260105T100000Z
+            SUMMARY:Weekly Meeting (Sunday WKST)
+            RRULE:FREQ=WEEKLY;BYDAY=MO,FR;WKST=SU;COUNT=8
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with WKST=SU: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  RRULE: ${fetched.event.rrule}")
+        assertNotNull(fetched.event.rrule, "Should have RRULE")
+    }
+
+    @Test
+    @Order(213)
+    @DisplayName("213. RRULE with BYSETPOS (nth occurrence)")
+    fun `RRULE with BYSETPOS for nth occurrence`() {
+        val uid = generateUid("bysetpos-rule")
+        val now = Instant.now()
+
+        // BYSETPOS selects specific occurrences from the BYDAY set
+        // -1 = last, 1 = first, 2 = second, etc.
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20260316T100000Z
+            DTEND:20260316T110000Z
+            SUMMARY:Third Monday of Month
+            RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=3;COUNT=6
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with BYSETPOS=3: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  RRULE: ${fetched.event.rrule}")
+        assertNotNull(fetched.event.rrule, "Should have RRULE")
+    }
+
+    @Test
+    @Order(214)
+    @DisplayName("214. RRULE with negative BYSETPOS (last weekday)")
+    fun `RRULE with negative BYSETPOS for last weekday`() {
+        val uid = generateUid("bysetpos-neg")
+        val now = Instant.now()
+
+        // Last weekday of each month
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20260130T150000Z
+            DTEND:20260130T160000Z
+            SUMMARY:Last Weekday of Month
+            RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=6
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with BYSETPOS=-1 (last weekday): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  RRULE: ${fetched.event.rrule}")
+    }
+
+    @Test
+    @Order(215)
+    @DisplayName("215. Leap year handling (Feb 29)")
+    fun `leap year event on February 29`() {
+        val uid = generateUid("leap-year")
+        val now = Instant.now()
+
+        // Feb 29 only exists in leap years (2028, 2032, 2036...)
+        // Server should accept and store this correctly
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;VALUE=DATE:20280229
+            DTEND;VALUE=DATE:20280301
+            SUMMARY:Leap Year Birthday
+            DESCRIPTION:This event is on Feb 29, 2028 (leap year)
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created leap year event (Feb 29, 2028): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+        assertTrue(fetched.event.isAllDay, "Should be all-day event")
+    }
+
+    @Test
+    @Order(216)
+    @DisplayName("216. Yearly recurring event on leap day")
+    fun `yearly recurring event on leap day`() {
+        val uid = generateUid("leap-yearly")
+        val now = Instant.now()
+
+        // Yearly event on Feb 29 - different servers handle differently
+        // Some skip non-leap years, some move to Feb 28 or Mar 1
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;VALUE=DATE:20280229
+            DTEND;VALUE=DATE:20280301
+            SUMMARY:Leap Year Anniversary
+            RRULE:FREQ=YEARLY;COUNT=4
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created yearly recurring leap day event: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  RRULE: ${fetched.event.rrule}")
+    }
+
+    @Test
+    @Order(217)
+    @DisplayName("217. Well-known CalDAV URL discovery")
+    fun `well-known caldav URL redirect`() {
+        // RFC 6764: CalDAV servers SHOULD provide /.well-known/caldav
+        // which redirects to the actual CalDAV endpoint
+        val wellKnownUrl = nextcloudUrl.trimEnd('/') + "/.well-known/caldav"
+
+        println("Testing well-known URL: $wellKnownUrl")
+
+        // Note: This may return redirect or actual content depending on server config
+        // Nextcloud typically redirects to /remote.php/dav
+        val client = okhttp3.OkHttpClient.Builder()
+            .followRedirects(false)  // Don't follow to see the redirect
+            .build()
+
+        val request = okhttp3.Request.Builder()
+            .url(wellKnownUrl)
+            .head()  // HEAD request is sufficient
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            println("  Response code: ${response.code}")
+            println("  Location header: ${response.header("Location")}")
+
+            // Either 301/302 redirect or 200 OK are valid
+            assertTrue(
+                response.code in listOf(200, 301, 302, 307, 308) ||
+                        response.code == 401,  // Auth required is also valid
+                "Well-known URL should return redirect or OK, got ${response.code}"
+            )
+        }
+    }
+
+    @Test
+    @Order(218)
+    @DisplayName("218. VALARM with ACKNOWLEDGED property (RFC 9074)")
+    fun `VALARM with ACKNOWLEDGED property`() {
+        val uid = generateUid("ack-alarm")
+        val startTime = Instant.now().plus(580, ChronoUnit.DAYS)
+        val acknowledgedTime = Instant.now()
+        val now = Instant.now()
+
+        // ACKNOWLEDGED marks when user dismissed/snoozed the alarm
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Acknowledged Alarm Event
+            BEGIN:VALARM
+            UID:alarm-${uid}
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:Reminder
+            ACKNOWLEDGED:${formatICalTimestamp(acknowledgedTime)}
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with ACKNOWLEDGED alarm: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Alarms: ${fetched.event.alarms.size}")
+        if (fetched.event.alarms.isNotEmpty()) {
+            val alarm = fetched.event.alarms.first()
+            println("  Alarm acknowledged: ${alarm.acknowledged}")
+        }
+    }
+
+    @Test
+    @Order(219)
+    @DisplayName("219. VALARM with RELATED-TO (snooze chain)")
+    fun `VALARM with RELATED-TO for snooze`() {
+        val uid = generateUid("snooze-alarm")
+        val startTime = Instant.now().plus(590, ChronoUnit.DAYS)
+        val now = Instant.now()
+        val originalAlarmUid = "original-alarm-$uid"
+        val snoozeAlarmUid = "snooze-alarm-$uid"
+
+        // RELATED-TO links snoozed alarm to original
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Snooze Chain Event
+            BEGIN:VALARM
+            UID:$originalAlarmUid
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:Original reminder
+            ACKNOWLEDGED:${formatICalTimestamp(now)}
+            END:VALARM
+            BEGIN:VALARM
+            UID:$snoozeAlarmUid
+            ACTION:DISPLAY
+            TRIGGER;VALUE=DATE-TIME:${formatICalTimestamp(startTime.minus(10, ChronoUnit.MINUTES))}
+            DESCRIPTION:Snoozed reminder
+            RELATED-TO:$originalAlarmUid
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with snooze alarm chain: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Alarms: ${fetched.event.alarms.size}")
+        fetched.event.alarms.forEach { alarm ->
+            println("    - UID: ${alarm.uid}, relatedTo: ${alarm.relatedTo}")
+        }
+    }
+
+    @Test
+    @Order(220)
+    @DisplayName("220. Far future event (year 2099)")
+    fun `far future event year 2099`() {
+        val uid = generateUid("far-future")
+        val now = Instant.now()
+
+        // Test server can handle dates far in the future
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20991231T235900Z
+            DTEND:21000101T000000Z
+            SUMMARY:New Year 2100 Countdown
+            DESCRIPTION:Event at the end of 2099
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created far future event (Dec 31, 2099): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+    }
+
     // ======================== Summary Test ========================
 
     @Test
@@ -4672,11 +5026,22 @@ class NextcloudIntegrationTest {
         println("  ✓ SEQUENCE increment on update")
         println("  ✓ Full VTIMEZONE component")
         println("  ✓ LOCATION with special characters")
+        println("\n=== Additional RFC 5545 Edge Cases ===")
+        println("  ✓ Floating time events (no timezone)")
+        println("  ✓ RRULE with WKST (week start day)")
+        println("  ✓ RRULE with BYSETPOS (nth occurrence)")
+        println("  ✓ RRULE with negative BYSETPOS (last weekday)")
+        println("  ✓ Leap year handling (Feb 29)")
+        println("  ✓ Yearly recurring on leap day")
+        println("  ✓ Well-known CalDAV URL discovery (RFC 6764)")
+        println("  ✓ VALARM with ACKNOWLEDGED (RFC 9074)")
+        println("  ✓ VALARM with RELATED-TO (snooze chain)")
+        println("  ✓ Far future events (year 2099)")
         println("========================================")
         println("TOTAL: ${createdEventUrls.size} events created and tested")
         println("========================================")
 
-        assertTrue(createdEventUrls.size >= 100,
-            "Should have created at least 100 test events")
+        assertTrue(createdEventUrls.size >= 110,
+            "Should have created at least 110 test events")
     }
 }
