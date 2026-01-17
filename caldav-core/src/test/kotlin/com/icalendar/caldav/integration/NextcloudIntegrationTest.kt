@@ -4873,6 +4873,335 @@ class NextcloudIntegrationTest {
         println("  DTSTART: ${fetched.event.dtStart}")
     }
 
+    // ======================== Practical Calendar Scenarios (Tests 221-230) ========================
+
+    @Test
+    @Order(221)
+    @DisplayName("221. Midnight-spanning event (11 PM to 1 AM)")
+    fun `event spanning midnight`() {
+        val uid = generateUid("midnight-span")
+        val now = Instant.now()
+
+        // Event from 11 PM to 1 AM next day
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20261015T230000Z
+            DTEND:20261016T010000Z
+            SUMMARY:Late Night Party
+            DESCRIPTION:Spans midnight boundary
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created midnight-spanning event: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+        println("  DTEND: ${fetched.event.dtEnd}")
+    }
+
+    @Test
+    @Order(222)
+    @DisplayName("222. Year boundary event (Dec 31 to Jan 1)")
+    fun `event spanning year boundary`() {
+        val uid = generateUid("year-boundary")
+        val now = Instant.now()
+
+        // New Year's Eve party spanning into New Year's Day
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20261231T200000Z
+            DTEND:20270101T040000Z
+            SUMMARY:New Year's Eve Party
+            DESCRIPTION:Spans year boundary 2026 to 2027
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created year-boundary spanning event: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+        println("  DTEND: ${fetched.event.dtEnd}")
+    }
+
+    @Test
+    @Order(223)
+    @DisplayName("223. RRULE with BYWEEKNO (week number recurrence)")
+    fun `RRULE with BYWEEKNO for quarterly reviews`() {
+        val uid = generateUid("byweekno")
+        val now = Instant.now()
+
+        // Quarterly review on week 1, 13, 26, 39 (approximately Q1, Q2, Q3, Q4 starts)
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20270104T100000Z
+            DTEND:20270104T110000Z
+            SUMMARY:Quarterly Review
+            RRULE:FREQ=YEARLY;BYWEEKNO=1,13,26,39;BYDAY=MO;COUNT=8
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with BYWEEKNO: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  RRULE: ${fetched.event.rrule}")
+    }
+
+    @Test
+    @Order(224)
+    @DisplayName("224. Very short event (1 minute)")
+    fun `very short 1 minute event`() {
+        val uid = generateUid("short-event")
+        val startTime = Instant.now().plus(600, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.MINUTES))}
+            SUMMARY:Quick Reminder
+            DESCRIPTION:1-minute event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created 1-minute event: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Duration: 1 minute")
+    }
+
+    @Test
+    @Order(225)
+    @DisplayName("225. Past event (historical)")
+    fun `past event in history`() {
+        val uid = generateUid("past-event")
+        val now = Instant.now()
+
+        // Event in the past (important for calendars that sync historical data)
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:20200101T100000Z
+            DTEND:20200101T110000Z
+            SUMMARY:Historical Event
+            DESCRIPTION:Event from 2020
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created past event (Jan 1, 2020): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+    }
+
+    @Test
+    @Order(226)
+    @DisplayName("226. RRULE with UNTIL as DATE (not datetime)")
+    fun `RRULE with UNTIL as DATE format`() {
+        val uid = generateUid("until-date")
+        val now = Instant.now()
+
+        // UNTIL can be DATE format for all-day events
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;VALUE=DATE:20270315
+            DTEND;VALUE=DATE:20270316
+            SUMMARY:Weekly All-Day Until June
+            RRULE:FREQ=WEEKLY;UNTIL=20270615
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created all-day event with UNTIL as DATE: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  RRULE: ${fetched.event.rrule}")
+    }
+
+    @Test
+    @Order(227)
+    @DisplayName("227. Event with CREATED and LAST-MODIFIED timestamps")
+    fun `event with creation and modification timestamps`() {
+        val uid = generateUid("timestamps")
+        val now = Instant.now()
+        val createdTime = now.minus(30, ChronoUnit.DAYS)
+        val modifiedTime = now.minus(5, ChronoUnit.DAYS)
+        val startTime = Instant.now().plus(610, ChronoUnit.DAYS)
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            CREATED:${formatICalTimestamp(createdTime)}
+            LAST-MODIFIED:${formatICalTimestamp(modifiedTime)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Event with Timestamps
+            SEQUENCE:3
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with CREATED/LAST-MODIFIED: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  CREATED: ${fetched.event.created}")
+        println("  LAST-MODIFIED: ${fetched.event.lastModified}")
+        println("  SEQUENCE: ${fetched.event.sequence}")
+    }
+
+    @Test
+    @Order(228)
+    @DisplayName("228. Event with all RFC 5545 status values")
+    fun `event status lifecycle TENTATIVE to CONFIRMED to CANCELLED`() {
+        val now = Instant.now()
+        val startTime = Instant.now().plus(620, ChronoUnit.DAYS)
+
+        // Test each status value in separate events
+        listOf("TENTATIVE", "CONFIRMED", "CANCELLED").forEachIndexed { idx, status ->
+            val uid = generateUid("status-${status.lowercase()}")
+            val icalData = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//iCalDAV Integration Test//EN
+                BEGIN:VEVENT
+                UID:$uid
+                DTSTAMP:${formatICalTimestamp(now)}
+                DTSTART:${formatICalTimestamp(startTime.plus((idx * 2).toLong(), ChronoUnit.HOURS))}
+                DTEND:${formatICalTimestamp(startTime.plus((idx * 2 + 1).toLong(), ChronoUnit.HOURS))}
+                SUMMARY:$status Meeting
+                STATUS:$status
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val result = createAndTrackEvent(uid, icalData)
+            println("Created event with STATUS:$status - ${result.href}")
+        }
+    }
+
+    @Test
+    @Order(229)
+    @DisplayName("229. Multi-month all-day event")
+    fun `multi-month all-day event spanning 3 months`() {
+        val uid = generateUid("multi-month")
+        val now = Instant.now()
+
+        // Long vacation spanning multiple months (e.g., summer break)
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;VALUE=DATE:20270601
+            DTEND;VALUE=DATE:20270901
+            SUMMARY:Summer Vacation
+            DESCRIPTION:3-month break (June, July, August)
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created 3-month all-day event: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+        println("  DTEND: ${fetched.event.dtEnd}")
+        assertTrue(fetched.event.isAllDay, "Should be all-day event")
+    }
+
+    @Test
+    @Order(230)
+    @DisplayName("230. Event exactly at DST transition time")
+    fun `event at exact DST spring forward time`() {
+        val uid = generateUid("dst-exact")
+        val now = Instant.now()
+
+        // US DST Spring forward: 2am becomes 3am on second Sunday of March
+        // An event at 2:30am on that day is "non-existent" in some interpretations
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VTIMEZONE
+            TZID:America/New_York
+            BEGIN:DAYLIGHT
+            DTSTART:20270314T020000
+            TZOFFSETFROM:-0500
+            TZOFFSETTO:-0400
+            TZNAME:EDT
+            END:DAYLIGHT
+            BEGIN:STANDARD
+            DTSTART:20271107T020000
+            TZOFFSETFROM:-0400
+            TZOFFSETTO:-0500
+            TZNAME:EST
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;TZID=America/New_York:20270314T023000
+            DTEND;TZID=America/New_York:20270314T033000
+            SUMMARY:DST Transition Meeting
+            DESCRIPTION:Event during the "skipped" hour when clocks spring forward
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event at DST spring-forward time: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+        println("  Note: Server handling of non-existent time may vary")
+    }
+
     // ======================== Summary Test ========================
 
     @Test
@@ -5037,11 +5366,22 @@ class NextcloudIntegrationTest {
         println("  ✓ VALARM with ACKNOWLEDGED (RFC 9074)")
         println("  ✓ VALARM with RELATED-TO (snooze chain)")
         println("  ✓ Far future events (year 2099)")
+        println("\n=== Practical Calendar Scenarios ===")
+        println("  ✓ Midnight-spanning events")
+        println("  ✓ Year boundary events (Dec 31 - Jan 1)")
+        println("  ✓ BYWEEKNO recurrence")
+        println("  ✓ Very short events (1 minute)")
+        println("  ✓ Past/historical events")
+        println("  ✓ UNTIL as DATE format")
+        println("  ✓ CREATED/LAST-MODIFIED timestamps")
+        println("  ✓ All RFC 5545 STATUS values")
+        println("  ✓ Multi-month all-day events")
+        println("  ✓ DST transition time events")
         println("========================================")
         println("TOTAL: ${createdEventUrls.size} events created and tested")
         println("========================================")
 
-        assertTrue(createdEventUrls.size >= 110,
-            "Should have created at least 110 test events")
+        assertTrue(createdEventUrls.size >= 120,
+            "Should have created at least 120 test events")
     }
 }
