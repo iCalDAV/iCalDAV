@@ -26,13 +26,18 @@ jobs:
 
       - name: Build and sign all modules
         env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          # Export key for Gradle to read
-          echo "$SIGNING_KEY" > /tmp/signing.key
-          export SIGNING_KEY=$(cat /tmp/signing.key)
-          rm /tmp/signing.key
+          # Decode base64 key (if base64 encoded) or use as-is
+          if echo "$SIGNING_KEY_BASE64" | base64 -d > /dev/null 2>&1; then
+            export SIGNING_KEY=$(echo "$SIGNING_KEY_BASE64" | base64 -d)
+          else
+            export SIGNING_KEY="$SIGNING_KEY_BASE64"
+          fi
+
+          # Default empty password if not set
+          export SIGNING_PASSWORD="${SIGNING_PASSWORD:-}"
 
           ./gradlew :icalendar-core:publishMavenPublicationToLocalRepository \
                     :webdav-core:publishMavenPublicationToLocalRepository \
