@@ -194,6 +194,7 @@ val client = CalDavClient(
 | **iCloud** | CDATA-wrapped responses, non-prefixed XML namespaces, regional server redirects, app-specific passwords, eventual consistency |
 | **Google Calendar** | OAuth token auth, specific date formatting |
 | **Fastmail** | Standard CalDAV with minor variations |
+| **Radicale** | Direct URL access (skip discovery), simple auth |
 | **Generic CalDAV** | RFC-compliant default behavior |
 
 ## Sync Engine
@@ -544,6 +545,30 @@ val allEvents = chunks.flatMap { (chunkStart, chunkEnd) ->
 }
 ```
 
+### Radicale Discovery Fails
+
+**Cause:** Radicale uses a simpler URL structure without DAV principal discovery.
+
+**Solution:** Skip discovery and use direct URLs:
+```kotlin
+val client = CalDavClient.withBasicAuth(username, password)
+
+// Radicale URL pattern: http://host:5232/{username}/{calendar}/
+val calendarUrl = "http://localhost:5232/$username/personal/"
+
+// All operations work with direct URLs
+val events = client.fetchEventsInRange(calendarUrl, startMs, endMs)
+val syncResult = client.syncCollection(calendarUrl, syncToken)
+client.createEvent(calendarUrl, event)
+```
+
+**Radicale URL patterns:**
+| Resource | Pattern |
+|----------|---------|
+| Calendar Home | `http://host:5232/{user}/` |
+| Calendar | `http://host:5232/{user}/{calendar}/` |
+| Event | `http://host:5232/{user}/{calendar}/{uid}.ics` |
+
 ## Java Interoperability
 
 iCalDAV is written in Kotlin but fully compatible with Java:
@@ -569,6 +594,7 @@ if (result instanceof DavResult.Success) {
 | RFC 6578 | Collection Sync | Full |
 | RFC 7986 | iCalendar Extensions | Partial (IMAGE, CONFERENCE) |
 | RFC 9073 | Structured Locations | Partial |
+| RFC 9253 | iCalendar Relationships | Full (LINK, RELATED-TO) |
 
 ## Links
 
@@ -596,6 +622,10 @@ Contributions are welcome. Please open an issue to discuss significant changes b
 
 # With coverage report
 ./gradlew test jacocoTestReport
+
+# Integration tests against real servers (requires Docker)
+./run-integration-tests.sh      # Nextcloud (184 tests)
+./run-radicale-tests.sh         # Radicale (184 tests)
 ```
 
 ## Security

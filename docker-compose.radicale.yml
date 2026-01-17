@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  radicale:
+    image: tomsquest/docker-radicale:latest
+    container_name: radicale-caldav-test
+    ports:
+      - "5232:5232"
+    environment:
+      - TAKE_FILE_OWNERSHIP=true
+    volumes:
+      - radicale_data:/data
+      - ./radicale-config:/config:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5232/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  radicale_data:
