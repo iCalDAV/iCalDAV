@@ -222,6 +222,10 @@ class ICalParser {
             val created = vevent.getPropertyOrNull<Property>("CREATED")
                 ?.let { parseDateTimeFromProperty(it) }
 
+            // Collect unknown/extra properties for round-trip fidelity
+            // This includes X-* vendor extensions, CLASS, and any other unhandled properties
+            val rawProperties = collectRawProperties(vevent)
+
             val event = ICalEvent(
                 uid = uid,
                 importId = importId,
@@ -251,7 +255,7 @@ class ICalParser {
                 conferences = conferences,
                 links = links,
                 relations = relations,
-                rawProperties = emptyMap()
+                rawProperties = rawProperties
             )
 
             ParseResult.success(event)
@@ -624,5 +628,75 @@ class ICalParser {
             reltype = reltype,
             gap = gap
         )
+    }
+
+    // ============ Raw Property Collection ============
+
+    /**
+     * Properties that are explicitly handled and should NOT be in rawProperties.
+     * These are parsed into dedicated ICalEvent fields.
+     */
+    private val handledProperties = setOf(
+        "UID", "DTSTART", "DTEND", "DURATION", "DTSTAMP",
+        "RECURRENCE-ID", "RRULE", "EXDATE", "RDATE",
+        "SUMMARY", "DESCRIPTION", "LOCATION",
+        "STATUS", "SEQUENCE", "TRANSP", "URL",
+        "COLOR", "IMAGE", "CONFERENCE",
+        "LINK", "RELATED-TO",
+        "ORGANIZER", "ATTENDEE",
+        "LAST-MODIFIED", "CREATED",
+        "CATEGORIES"
+        // Note: BEGIN, END, and VALARM are components, not properties
+    )
+
+    /**
+     * Collect unhandled properties for round-trip fidelity.
+     *
+     * This preserves:
+     * - X-* vendor extensions (X-APPLE-STRUCTURED-LOCATION, X-GOOGLE-CONFERENCE, etc.)
+     * - CLASS property (PUBLIC, PRIVATE, CONFIDENTIAL)
+     * - Any other RFC 5545 property not explicitly handled
+     *
+     * Properties with parameters are stored with parameters in the key:
+     * "X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-TITLE=Apple Park" -> "geo:37.33..."
+     *
+     * @param vevent The VEvent component to extract properties from
+     * @return Map of property name (with params) to value
+     */
+    private fun collectRawProperties(vevent: VEvent): Map<String, String> {
+        val raw = mutableMapOf<String, String>()
+
+        for (prop in vevent.getAllProperties()) {
+            val propName = prop.name?.uppercase() ?: continue
+
+            // Skip properties we handle explicitly
+            if (propName in handledProperties) continue
+
+            // Skip component markers
+            if (propName == "BEGIN" || propName == "END") continue
+
+            // Get parameters list via ical4j API
+            val paramList = prop.getParameters()
+
+            // Build property key with parameters for properties that have them
+            val key = if (paramList.isEmpty()) {
+                propName
+            } else {
+                // Include parameters in key for X-* properties with parameters
+                // e.g., "X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-TITLE=Apple Park"
+                val paramStr = paramList.joinToString(";") { param ->
+                    "${param.name}=${param.value}"
+                }
+                "$propName;$paramStr"
+            }
+
+            // Store the value
+            val value = prop.value
+            if (!value.isNullOrBlank()) {
+                raw[key] = value
+            }
+        }
+
+        return raw
     }
 }

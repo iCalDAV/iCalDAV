@@ -36,6 +36,14 @@ inline fun <reified T : Property> VAlarm.getPropertyOrNull(name: String): T? {
 }
 
 /**
+ * Get all properties from a VEvent.
+ * Returns a list that can be iterated over.
+ */
+fun VEvent.getAllProperties(): List<Property> {
+    return getProperties<Property>().toList()
+}
+
+/**
  * Get parameter by name, returning null if not found.
  * Unwraps ical4j 4.x Optional<T> to nullable T?.
  */

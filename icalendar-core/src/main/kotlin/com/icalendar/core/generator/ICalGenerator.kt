@@ -192,6 +192,13 @@ class ICalGenerator(
             appendLine("LAST-MODIFIED:${it.toICalString()}")
         }
 
+        // Raw properties (X-*, CLASS, and other unhandled properties for round-trip)
+        event.rawProperties.forEach { (key, value) ->
+            // Key may contain parameters: "X-APPLE-STRUCTURED-LOCATION;VALUE=URI"
+            // In that case, output as-is with the value
+            appendFoldedLine("$key:$value")
+        }
+
         appendLine("END:VEVENT")
     }
 
