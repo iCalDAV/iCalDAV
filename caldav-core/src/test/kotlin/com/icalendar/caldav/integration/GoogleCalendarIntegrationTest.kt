@@ -646,7 +646,9 @@ class GoogleCalendarIntegrationTest {
         val httpClient = WebDavClient.withAuth(invalidAuth)
         val invalidClient = CalDavClient(WebDavClient(httpClient, invalidAuth))
 
-        val result = invalidClient.getCtag(calendarUrl)
+        // Use hardcoded URL since this test doesn't depend on valid credentials
+        val testCalendarUrl = "$GOOGLE_CALDAV_BASE/primary/events/"
+        val result = invalidClient.getCtag(testCalendarUrl)
         println("Invalid auth result: $result")
 
         assertTrue(
