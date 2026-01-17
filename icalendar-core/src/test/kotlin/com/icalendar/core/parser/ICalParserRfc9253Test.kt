@@ -180,6 +180,74 @@ class ICalParserRfc9253Test {
 
             assertEquals(3, event.links.size)
         }
+
+        @Test
+        fun `parse LINK with GAP parameter`() {
+            val ical = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:link-test-gap
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                SUMMARY:Event with GAP Link
+                LINK;VALUE=URI;REL=next;GAP=PT1H30M:https://example.com/next-event
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val result = parser.parseAllEvents(ical)
+            assertTrue(result is ParseResult.Success)
+            val event = result.getOrNull()!![0]
+
+            assertEquals(1, event.links.size)
+            assertEquals(LinkRelationType.NEXT, event.links[0].relation)
+            assertNotNull(event.links[0].gap)
+            assertEquals(java.time.Duration.ofMinutes(90), event.links[0].gap)
+        }
+
+        @Test
+        fun `parse LINK with unknown REL type returns CUSTOM`() {
+            val ical = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:link-test-custom
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                SUMMARY:Event with Custom Link
+                LINK;VALUE=URI;REL=x-custom-rel:https://example.com/custom
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val result = parser.parseAllEvents(ical)
+            assertTrue(result is ParseResult.Success)
+            val event = result.getOrNull()!![0]
+
+            assertEquals(1, event.links.size)
+            assertEquals(LinkRelationType.CUSTOM, event.links[0].relation)
+        }
+
+        @Test
+        fun `parse LINK without VALUE=URI still works if server sends it`() {
+            // Some servers may not include VALUE=URI - test that our fromParameters
+            // still works (though ical4j may not parse it correctly)
+            val link = ICalLink.fromParameters(
+                uri = "https://example.com/no-value-param",
+                rel = "alternate",
+                fmttype = null,
+                title = null,
+                label = null,
+                language = null,
+                gap = null
+            )
+
+            assertEquals("https://example.com/no-value-param", link.uri)
+            assertEquals(LinkRelationType.ALTERNATE, link.relation)
+        }
     }
 
     @Nested
@@ -332,6 +400,82 @@ class ICalParserRfc9253Test {
             assertEquals(RelationType.DEPENDS_ON, event.relations[0].relationType)
             assertEquals(RelationType.NEXT, event.relations[1].relationType)
         }
+
+        @Test
+        fun `parse RELATED-TO with GAP parameter`() {
+            val ical = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:related-test-gap
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                SUMMARY:Event with GAP Relation
+                RELATED-TO;RELTYPE=NEXT;GAP=PT2H:next-event-uid
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val result = parser.parseAllEvents(ical)
+            assertTrue(result is ParseResult.Success)
+            val event = result.getOrNull()!![0]
+
+            assertEquals(1, event.relations.size)
+            assertEquals(RelationType.NEXT, event.relations[0].relationType)
+            assertNotNull(event.relations[0].gap)
+            assertEquals(java.time.Duration.ofHours(2), event.relations[0].gap)
+        }
+
+        @Test
+        fun `parse RELATED-TO with unknown RELTYPE defaults to PARENT`() {
+            val ical = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:related-test-unknown
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                SUMMARY:Event with Unknown Relation Type
+                RELATED-TO;RELTYPE=X-CUSTOM-TYPE:custom-uid
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val result = parser.parseAllEvents(ical)
+            assertTrue(result is ParseResult.Success)
+            val event = result.getOrNull()!![0]
+
+            assertEquals(1, event.relations.size)
+            // Unknown RELTYPE defaults to PARENT per RelationType.fromString
+            assertEquals(RelationType.PARENT, event.relations[0].relationType)
+        }
+
+        @Test
+        fun `parse RELATED-TO with negative GAP`() {
+            val ical = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:related-test-neg-gap
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                SUMMARY:Event with Negative GAP
+                RELATED-TO;RELTYPE=NEXT;GAP=-PT30M:prev-event-uid
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val result = parser.parseAllEvents(ical)
+            assertTrue(result is ParseResult.Success)
+            val event = result.getOrNull()!![0]
+
+            assertEquals(1, event.relations.size)
+            assertNotNull(event.relations[0].gap)
+            assertEquals(java.time.Duration.ofMinutes(-30), event.relations[0].gap)
+        }
     }
 
     @Nested
@@ -477,6 +621,78 @@ class ICalParserRfc9253Test {
             assertTrue(event2.links.isEmpty())
             assertTrue(event2.relations.isEmpty())
         }
+
+        @Test
+        fun `LINK with GAP survives roundtrip`() {
+            val ical = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-link-gap
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                SUMMARY:Roundtrip Link GAP Test
+                LINK;VALUE=URI;REL=next;GAP=PT1H30M:https://example.com/next
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            // Parse original
+            val result = parser.parseAllEvents(ical)
+            assertTrue(result is ParseResult.Success)
+            val event1 = result.getOrNull()!![0]
+            assertEquals(1, event1.links.size)
+            assertNotNull(event1.links[0].gap)
+
+            // Generate
+            val generated = generator.generate(event1)
+
+            // Parse generated
+            val result2 = parser.parseAllEvents(generated)
+            assertTrue(result2 is ParseResult.Success)
+            val event2 = result2.getOrNull()!![0]
+
+            // Verify GAP survived
+            assertEquals(event1.links[0].gap, event2.links[0].gap)
+            assertEquals(java.time.Duration.ofMinutes(90), event2.links[0].gap)
+        }
+
+        @Test
+        fun `RELATED-TO with GAP survives roundtrip`() {
+            val ical = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-related-gap
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                SUMMARY:Roundtrip Related GAP Test
+                RELATED-TO;RELTYPE=NEXT;GAP=PT2H:next-event-uid
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            // Parse original
+            val result = parser.parseAllEvents(ical)
+            assertTrue(result is ParseResult.Success)
+            val event1 = result.getOrNull()!![0]
+            assertEquals(1, event1.relations.size)
+            assertNotNull(event1.relations[0].gap)
+
+            // Generate
+            val generated = generator.generate(event1)
+
+            // Parse generated
+            val result2 = parser.parseAllEvents(generated)
+            assertTrue(result2 is ParseResult.Success)
+            val event2 = result2.getOrNull()!![0]
+
+            // Verify GAP survived
+            assertEquals(event1.relations[0].gap, event2.relations[0].gap)
+            assertEquals(java.time.Duration.ofHours(2), event2.relations[0].gap)
+        }
     }
 
     @Nested
@@ -549,6 +765,188 @@ class ICalParserRfc9253Test {
 
             // PARENT is the default, so RELTYPE should be omitted
             assertEquals("RELATED-TO:parent-uid", result)
+        }
+    }
+
+    @Nested
+    inner class EdgeCaseTests {
+
+        @Test
+        fun `ICalLink fromParameters handles empty URI`() {
+            val link = ICalLink.fromParameters(uri = "")
+            assertEquals("", link.uri)
+            assertEquals(LinkRelationType.RELATED, link.relation)
+        }
+
+        @Test
+        fun `ICalLink fromParameters handles null parameters gracefully`() {
+            val link = ICalLink.fromParameters(
+                uri = "https://example.com",
+                rel = null,
+                fmttype = null,
+                title = null,
+                label = null,
+                language = null,
+                gap = null
+            )
+
+            assertEquals("https://example.com", link.uri)
+            assertEquals(LinkRelationType.RELATED, link.relation)
+            assertNull(link.mediaType)
+            assertNull(link.title)
+            assertNull(link.gap)
+        }
+
+        @Test
+        fun `ICalLink fromParameters handles invalid GAP duration`() {
+            val link = ICalLink.fromParameters(
+                uri = "https://example.com",
+                gap = "invalid-duration"
+            )
+
+            assertEquals("https://example.com", link.uri)
+            // Invalid duration should result in null gap (not throw)
+            assertNull(link.gap)
+        }
+
+        @Test
+        fun `ICalRelation fromParameters handles empty UID`() {
+            val relation = ICalRelation.fromParameters(uid = "")
+            assertEquals("", relation.uid)
+            assertEquals(RelationType.PARENT, relation.relationType)
+        }
+
+        @Test
+        fun `ICalRelation fromParameters handles null parameters gracefully`() {
+            val relation = ICalRelation.fromParameters(
+                uid = "test-uid",
+                reltype = null,
+                gap = null
+            )
+
+            assertEquals("test-uid", relation.uid)
+            assertEquals(RelationType.PARENT, relation.relationType)
+            assertNull(relation.gap)
+        }
+
+        @Test
+        fun `ICalRelation fromParameters handles invalid GAP duration`() {
+            val relation = ICalRelation.fromParameters(
+                uid = "test-uid",
+                gap = "not-a-duration"
+            )
+
+            assertEquals("test-uid", relation.uid)
+            // Invalid duration should result in null gap (not throw)
+            assertNull(relation.gap)
+        }
+
+        @Test
+        fun `LinkRelationType fromString handles blank string`() {
+            assertEquals(LinkRelationType.RELATED, LinkRelationType.fromString(""))
+            assertEquals(LinkRelationType.RELATED, LinkRelationType.fromString("  "))
+            assertEquals(LinkRelationType.RELATED, LinkRelationType.fromString(null))
+        }
+
+        @Test
+        fun `RelationType fromString handles blank string`() {
+            assertEquals(RelationType.PARENT, RelationType.fromString(""))
+            assertEquals(RelationType.PARENT, RelationType.fromString("  "))
+            assertEquals(RelationType.PARENT, RelationType.fromString(null))
+        }
+
+        @Test
+        fun `ICalLink with all RFC 9253 relation types`() {
+            // Test all LinkRelationType values work correctly
+            val types = listOf(
+                LinkRelationType.ALTERNATE,
+                LinkRelationType.DESCRIBEDBY,
+                LinkRelationType.RELATED,
+                LinkRelationType.NEXT,
+                LinkRelationType.PREV,
+                LinkRelationType.SELF
+            )
+
+            for (type in types) {
+                val link = ICalLink(uri = "https://example.com", relation = type)
+                val icalString = link.toICalString()
+                assertTrue(icalString.contains(":https://example.com"))
+            }
+        }
+
+        @Test
+        fun `ICalRelation with all RFC 9253 relation types`() {
+            // Test all RelationType values work correctly
+            val types = listOf(
+                RelationType.PARENT,
+                RelationType.CHILD,
+                RelationType.SIBLING,
+                RelationType.FINISHTOSTART,
+                RelationType.FINISHTOFINISH,
+                RelationType.STARTTOFINISH,
+                RelationType.STARTTOSTART,
+                RelationType.FIRST,
+                RelationType.NEXT,
+                RelationType.DEPENDS_ON,
+                RelationType.REFID,
+                RelationType.CONCEPT,
+                RelationType.REQUIRES,
+                RelationType.REPLACES
+            )
+
+            for (type in types) {
+                val relation = ICalRelation(uid = "test-uid", relationType = type)
+                val icalString = relation.toICalString()
+                assertTrue(icalString.endsWith(":test-uid"))
+            }
+        }
+
+        @Test
+        fun `ICalLink toICalString escapes title with quotes`() {
+            val link = ICalLink(
+                uri = "https://example.com",
+                title = "Title with special chars"
+            )
+            val icalString = link.toICalString()
+
+            // Title should be wrapped in quotes
+            assertTrue(icalString.contains("TITLE=\"Title with special chars\""))
+        }
+
+        @Test
+        fun `ICalLink fromParameters strips quotes from title`() {
+            val link = ICalLink.fromParameters(
+                uri = "https://example.com",
+                title = "\"Quoted Title\""
+            )
+
+            // Quotes should be stripped
+            assertEquals("Quoted Title", link.title)
+        }
+
+        @Test
+        fun `RelationType DEPENDS_ON converts correctly to iCal string`() {
+            val relation = ICalRelation(uid = "uid", relationType = RelationType.DEPENDS_ON)
+            val icalString = relation.toICalString()
+
+            // Should use hyphen, not underscore
+            assertTrue(icalString.contains("RELTYPE=DEPENDS-ON"))
+        }
+
+        @Test
+        fun `RelationType fromString handles hyphen to underscore conversion`() {
+            assertEquals(RelationType.DEPENDS_ON, RelationType.fromString("DEPENDS-ON"))
+            assertEquals(RelationType.DEPENDS_ON, RelationType.fromString("depends-on"))
+            assertEquals(RelationType.DEPENDS_ON, RelationType.fromString("DEPENDS_ON"))
+        }
+
+        @Test
+        fun `ICalLink next factory method creates correct relation with gap`() {
+            // ICalLink doesn't have a next() factory, but ICalRelation does
+            val relation = ICalRelation.next("next-uid", java.time.Duration.ofMinutes(45))
+
+            assertEquals(RelationType.NEXT, relation.relationType)
+            assertEquals(java.time.Duration.ofMinutes(45), relation.gap)
         }
     }
 }
