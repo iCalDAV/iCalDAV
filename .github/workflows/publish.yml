@@ -24,20 +24,28 @@ jobs:
       - name: Build and Test
         run: ./gradlew build --no-daemon
 
-      - name: Build and sign all modules
+      - name: Decode signing key
         env:
           SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY }}
+        run: |
+          # Decode base64-encoded GPG key to a file
+          echo "$SIGNING_KEY_BASE64" | base64 -d > /tmp/signing-key.asc
+          echo "SIGNING_KEY_FILE=/tmp/signing-key.asc" >> $GITHUB_ENV
+
+      - name: Build and sign all modules
+        env:
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          # Decode base64 key (if base64 encoded) or use as-is
-          if echo "$SIGNING_KEY_BASE64" | base64 -d > /dev/null 2>&1; then
-            export SIGNING_KEY=$(echo "$SIGNING_KEY_BASE64" | base64 -d)
-          else
-            export SIGNING_KEY="$SIGNING_KEY_BASE64"
-          fi
+          # Read the decoded key from file
+          export SIGNING_KEY="$(cat /tmp/signing-key.asc)"
 
-          # Default empty password if not set
-          export SIGNING_PASSWORD="${SIGNING_PASSWORD:-}"
+          # Trim password (handle single space workaround for empty password)
+          PASS="${SIGNING_PASSWORD:-}"
+          if [ "$PASS" = " " ]; then
+            export SIGNING_PASSWORD=""
+          else
+            export SIGNING_PASSWORD="$PASS"
+          fi
 
           ./gradlew :icalendar-core:publishMavenPublicationToLocalRepository \
                     :webdav-core:publishMavenPublicationToLocalRepository \
@@ -45,6 +53,10 @@ jobs:
                     :caldav-sync:publishMavenPublicationToLocalRepository \
                     :ics-subscription:publishMavenPublicationToLocalRepository \
                     --no-daemon
+
+      - name: Cleanup signing key
+        if: always()
+        run: rm -f /tmp/signing-key.asc
 
       - name: Create bundle for Central Portal
         run: |
