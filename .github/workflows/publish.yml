@@ -29,6 +29,11 @@ jobs:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
+          # Export key for Gradle to read
+          echo "$SIGNING_KEY" > /tmp/signing.key
+          export SIGNING_KEY=$(cat /tmp/signing.key)
+          rm /tmp/signing.key
+
           ./gradlew :icalendar-core:publishMavenPublicationToLocalRepository \
                     :webdav-core:publishMavenPublicationToLocalRepository \
                     :caldav-core:publishMavenPublicationToLocalRepository \
