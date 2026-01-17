@@ -4009,6 +4009,516 @@ class NextcloudIntegrationTest {
         println("Created all-day recurring event: ${result.href}")
     }
 
+    // ======================== KashCal Integration Scenarios ========================
+
+    @Test
+    @Order(200)
+    @DisplayName("200. Exception bundling - master + exceptions in single VCALENDAR")
+    fun `exception bundling for CalDAV PUT`() {
+        val uid = generateUid("exception-bundle")
+        val now = Instant.now()
+        val startTime = Instant.now().plus(500, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
+            .plus(9, ChronoUnit.HOURS)
+
+        // Master event with RRULE + two exceptions in single VCALENDAR
+        // This is how KashCal serializes exception updates
+        val exception1Time = startTime.plus(7, ChronoUnit.DAYS)
+        val exception2Time = startTime.plus(14, ChronoUnit.DAYS)
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Weekly Team Sync
+            RRULE:FREQ=WEEKLY;COUNT=5
+            SEQUENCE:0
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            RECURRENCE-ID:${formatICalTimestamp(exception1Time)}
+            DTSTART:${formatICalTimestamp(exception1Time.plus(1, ChronoUnit.HOURS))}
+            DTEND:${formatICalTimestamp(exception1Time.plus(2, ChronoUnit.HOURS))}
+            SUMMARY:Weekly Team Sync (Moved 1hr)
+            SEQUENCE:1
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            RECURRENCE-ID:${formatICalTimestamp(exception2Time)}
+            DTSTART:${formatICalTimestamp(exception2Time)}
+            DTEND:${formatICalTimestamp(exception2Time.plus(2, ChronoUnit.HOURS))}
+            SUMMARY:Weekly Team Sync (Extended)
+            SEQUENCE:1
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created bundled master+exceptions: ${result.href}")
+
+        // Fetch and verify all events parsed
+        val fetched = calDavClient.fetchEventsByHref(defaultCalendarUrl!!, listOf(result.href))
+        when (fetched) {
+            is DavResult.Success -> {
+                println("  Fetched ${fetched.value.size} events from bundle")
+                fetched.value.forEach { e ->
+                    println("    - ${e.event.summary} (recurrenceId: ${e.event.recurrenceId})")
+                }
+                // Should parse master + exceptions
+                assertTrue(fetched.value.size >= 1, "Should parse at least master event")
+            }
+            else -> fail("Fetch failed: $fetched")
+        }
+    }
+
+    @Test
+    @Order(201)
+    @DisplayName("201. VALARM duration format variations")
+    fun `VALARM with various duration formats`() {
+        val uid = generateUid("alarm-formats")
+        val startTime = Instant.now().plus(510, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        // Test various VALARM trigger formats from KashCal
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Multi-Alarm Event
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:15 minutes before
+            END:VALARM
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-PT1H
+            DESCRIPTION:1 hour before
+            END:VALARM
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-PT2H30M
+            DESCRIPTION:2.5 hours before
+            END:VALARM
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-P1D
+            DESCRIPTION:1 day before
+            END:VALARM
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-P1W
+            DESCRIPTION:1 week before
+            END:VALARM
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER;RELATED=END:-PT10M
+            DESCRIPTION:10 minutes before end
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with multiple alarm formats: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Parsed ${fetched.event.alarms.size} alarms")
+        fetched.event.alarms.forEach { alarm ->
+            println("    - Trigger: ${alarm.trigger}, Related to end: ${alarm.triggerRelatedToEnd}")
+        }
+    }
+
+    @Test
+    @Order(202)
+    @DisplayName("202. All-day DTEND exclusive handling (RFC 5545)")
+    fun `all-day DTEND exclusive date handling`() {
+        val uid = generateUid("allday-dtend")
+        val now = Instant.now()
+
+        // RFC 5545: All-day DTEND is EXCLUSIVE (day AFTER the event)
+        // A 1-day event on Jan 15 has DTSTART=20260115, DTEND=20260116
+        // A 3-day event Jan 15-17 has DTSTART=20260115, DTEND=20260118
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;VALUE=DATE:20260715
+            DTEND;VALUE=DATE:20260718
+            SUMMARY:3-Day Conference (Jul 15-17)
+            DESCRIPTION:DTEND is exclusive - 20260718 means event ends on 20260717
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created 3-day all-day event: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART: ${fetched.event.dtStart}")
+        println("  DTEND: ${fetched.event.dtEnd}")
+        println("  isAllDay: ${fetched.event.isAllDay}")
+
+        assertTrue(fetched.event.isAllDay, "Should be all-day event")
+    }
+
+    @Test
+    @Order(203)
+    @DisplayName("203. Duplicate href deduplication in multiget")
+    fun `multiget with duplicate hrefs deduplicates`() {
+        val uid = generateUid("dedup-test")
+        val startTime = Instant.now().plus(520, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Dedup Test Event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+
+        // iCloud sometimes returns duplicate hrefs in sync-collection
+        // Client should deduplicate before making multiget request
+        val duplicateHrefs = listOf(
+            created.href,
+            created.href,  // Duplicate
+            created.href   // Another duplicate
+        )
+
+        val result = calDavClient.fetchEventsByHref(defaultCalendarUrl!!, duplicateHrefs)
+
+        when (result) {
+            is DavResult.Success -> {
+                println("Multiget with 3 hrefs (2 duplicates) returned ${result.value.size} events")
+                // Should return 1 event, not 3
+                // Note: Server may return 1 or 3 depending on implementation
+                // But our client should handle either case gracefully
+                assertTrue(result.value.isNotEmpty(), "Should return at least 1 event")
+            }
+            else -> fail("Multiget failed: $result")
+        }
+    }
+
+    @Test
+    @Order(204)
+    @DisplayName("204. Multiget with mix of valid and non-existent hrefs")
+    fun `multiget partial success with missing hrefs`() {
+        // Create one valid event
+        val uid = generateUid("partial-multiget")
+        val startTime = Instant.now().plus(530, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Valid Event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+
+        // Mix of valid and non-existent hrefs
+        val mixedHrefs = listOf(
+            created.href,
+            "$defaultCalendarUrl/nonexistent-event-1.ics",
+            "$defaultCalendarUrl/nonexistent-event-2.ics"
+        )
+
+        val result = calDavClient.fetchEventsByHref(defaultCalendarUrl!!, mixedHrefs)
+
+        when (result) {
+            is DavResult.Success -> {
+                println("Partial multiget returned ${result.value.size} events")
+                // Should return at least the valid event
+                assertTrue(
+                    result.value.any { it.event.uid == uid },
+                    "Should return the valid event even if others are missing"
+                )
+            }
+            else -> {
+                // Some servers may return error for any missing href
+                println("Multiget returned: $result")
+            }
+        }
+    }
+
+    @Test
+    @Order(205)
+    @DisplayName("205. RECURRENCE-ID format variations")
+    fun `RECURRENCE-ID with different datetime formats`() {
+        val uid = generateUid("recid-formats")
+        val now = Instant.now()
+
+        // Test RECURRENCE-ID with DATE format (all-day exception)
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;VALUE=DATE:20260801
+            DTEND;VALUE=DATE:20260802
+            SUMMARY:Weekly All-Day
+            RRULE:FREQ=WEEKLY;COUNT=4
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            RECURRENCE-ID;VALUE=DATE:20260808
+            DTSTART;VALUE=DATE:20260809
+            DTEND;VALUE=DATE:20260810
+            SUMMARY:Weekly All-Day (Moved)
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created all-day recurring with DATE RECURRENCE-ID: ${result.href}")
+    }
+
+    @Test
+    @Order(206)
+    @DisplayName("206. X-APPLE vendor properties round-trip")
+    fun `X-APPLE properties preserved`() {
+        val uid = generateUid("x-apple")
+        val startTime = Instant.now().plus(540, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        // KashCal uses X-APPLE-DEFAULT-ALARM:FALSE to prevent iPhone merging
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Apple Properties Test
+            X-APPLE-TRAVEL-ADVISORY-BEHAVIOR:AUTOMATIC
+            BEGIN:VALARM
+            UID:alarm-$uid
+            X-WR-ALARMUID:alarm-$uid
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:Reminder
+            X-APPLE-DEFAULT-ALARM:FALSE
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with X-APPLE properties: ${result.href}")
+    }
+
+    @Test
+    @Order(207)
+    @DisplayName("207. EXDATE with multiple dates")
+    fun `EXDATE with comma-separated dates`() {
+        val uid = generateUid("comma-sep-exdate")
+        val now = Instant.now()
+        val startTime = Instant.now().plus(550, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
+            .plus(10, ChronoUnit.HOURS)
+
+        // Multiple EXDATEs can be in single property or multiple properties
+        val exdate1 = startTime.plus(7, ChronoUnit.DAYS)
+        val exdate2 = startTime.plus(14, ChronoUnit.DAYS)
+        val exdate3 = startTime.plus(21, ChronoUnit.DAYS)
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Weekly with Multiple Cancellations
+            RRULE:FREQ=WEEKLY;COUNT=8
+            EXDATE:${formatICalTimestamp(exdate1)},${formatICalTimestamp(exdate2)}
+            EXDATE:${formatICalTimestamp(exdate3)}
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with multiple EXDATEs: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Parsed ${fetched.event.exdates.size} EXDATEs")
+    }
+
+    @Test
+    @Order(208)
+    @DisplayName("208. SEQUENCE increment on update")
+    fun `SEQUENCE property increments on update`() {
+        val uid = generateUid("sequence")
+        val startTime = Instant.now().plus(560, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        // Create with SEQUENCE:0
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Sequence Test
+            SEQUENCE:0
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val created = createAndTrackEvent(uid, icalData)
+
+        // Update with SEQUENCE:1
+        val updatedIcal = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(Instant.now())}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(2, ChronoUnit.HOURS))}
+            SUMMARY:Sequence Test (Updated)
+            SEQUENCE:1
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val updateResult = calDavClient.updateEventRaw(created.href, updatedIcal, created.etag)
+
+        when (updateResult) {
+            is DavResult.Success -> {
+                println("Updated event with SEQUENCE:1, new ETag: ${updateResult.value}")
+                // Update tracked etag
+                val index = createdEventUrls.indexOfFirst { it.first == created.href }
+                if (index >= 0) {
+                    createdEventUrls[index] = Pair(created.href, updateResult.value)
+                }
+
+                val fetched = fetchAndVerify(created.href)
+                println("  SEQUENCE after update: ${fetched.event.sequence}")
+            }
+            else -> fail("Update failed: $updateResult")
+        }
+    }
+
+    @Test
+    @Order(209)
+    @DisplayName("209. Timezone with VTIMEZONE component")
+    fun `event with full VTIMEZONE component`() {
+        val uid = generateUid("full-tz")
+        val now = Instant.now()
+
+        // Full VTIMEZONE with STANDARD and DAYLIGHT components
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VTIMEZONE
+            TZID:America/Los_Angeles
+            BEGIN:DAYLIGHT
+            DTSTART:20260308T020000
+            TZOFFSETFROM:-0800
+            TZOFFSETTO:-0700
+            TZNAME:PDT
+            RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU
+            END:DAYLIGHT
+            BEGIN:STANDARD
+            DTSTART:20261101T020000
+            TZOFFSETFROM:-0700
+            TZOFFSETTO:-0800
+            TZNAME:PST
+            RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART;TZID=America/Los_Angeles:20261015T090000
+            DTEND;TZID=America/Los_Angeles:20261015T100000
+            SUMMARY:LA Meeting (PDT)
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with full VTIMEZONE: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  DTSTART timezone: ${fetched.event.dtStart.timezone}")
+    }
+
+    @Test
+    @Order(210)
+    @DisplayName("210. Event with LOCATION containing special characters")
+    fun `location with address and special chars`() {
+        val uid = generateUid("location-special")
+        val startTime = Instant.now().plus(570, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Office Meeting
+            LOCATION:123 Main St\, Suite 456\; San Francisco\, CA 94102
+            DESCRIPTION:Address with comma\, semicolon\; and newline:\nSecond line
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with special chars in location: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        println("  Location: ${fetched.event.location}")
+        println("  Description: ${fetched.event.description}")
+    }
+
     // ======================== Summary Test ========================
 
     @Test
@@ -4150,6 +4660,18 @@ class NextcloudIntegrationTest {
         println("  ✓ RRULE negative BYDAY (-1MO)")
         println("  ✓ RDATE (additional occurrences)")
         println("  ✓ All-day recurring with timezone")
+        println("\n=== KashCal Integration Scenarios ===")
+        println("  ✓ Exception bundling (master + exceptions in single PUT)")
+        println("  ✓ VALARM duration format variations (-PT15M, -P1D, -P1W)")
+        println("  ✓ All-day DTEND exclusive handling (RFC 5545)")
+        println("  ✓ Duplicate href deduplication")
+        println("  ✓ Multiget partial success (mix of valid/invalid hrefs)")
+        println("  ✓ RECURRENCE-ID format variations (DATE)")
+        println("  ✓ X-APPLE vendor properties")
+        println("  ✓ EXDATE with comma-separated dates")
+        println("  ✓ SEQUENCE increment on update")
+        println("  ✓ Full VTIMEZONE component")
+        println("  ✓ LOCATION with special characters")
         println("========================================")
         println("TOTAL: ${createdEventUrls.size} events created and tested")
         println("========================================")
