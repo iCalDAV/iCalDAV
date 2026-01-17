@@ -1441,6 +1441,210 @@ class NextcloudIntegrationTest {
         assertTrue(events.isNotEmpty(), "Should find test events")
     }
 
+    // ======================== Additional CalDavClient Method Tests ========================
+
+    @Test
+    @Order(84)
+    @DisplayName("84. Fetch events by href (calendar-multiget)")
+    fun `fetchEventsByHref returns specific events`() {
+        assertNotNull(defaultCalendarUrl)
+
+        // Create two events
+        val uid1 = generateUid("multiget-1")
+        val uid2 = generateUid("multiget-2")
+        val startTime = Instant.now().plus(106, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData1 = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid1
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Multiget Event 1
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val icalData2 = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid2
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime.plus(1, ChronoUnit.DAYS))}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Multiget Event 2
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val create1 = createAndTrackEvent(uid1, icalData1)
+        val create2 = createAndTrackEvent(uid2, icalData2)
+
+        // Fetch both events using multiget
+        val result = calDavClient.fetchEventsByHref(
+            calendarUrl = defaultCalendarUrl!!,
+            eventHrefs = listOf(create1.href, create2.href)
+        )
+
+        assertTrue(result is DavResult.Success, "Should fetch events by href: $result")
+        @Suppress("UNCHECKED_CAST")
+        val events = (result as DavResult.Success<List<EventWithMetadata>>).value
+
+        println("Multiget returned ${events.size} events")
+        assertEquals(2, events.size, "Should return exactly 2 events")
+
+        val summaries = events.map { it.event.summary }
+        assertTrue(summaries.contains("Multiget Event 1"), "Should contain first event")
+        assertTrue(summaries.contains("Multiget Event 2"), "Should contain second event")
+    }
+
+    @Test
+    @Order(85)
+    @DisplayName("85. Fetch events by href with empty list")
+    fun `fetchEventsByHref with empty list returns empty result`() {
+        assertNotNull(defaultCalendarUrl)
+
+        val result = calDavClient.fetchEventsByHref(
+            calendarUrl = defaultCalendarUrl!!,
+            eventHrefs = emptyList()
+        )
+
+        assertTrue(result is DavResult.Success, "Should succeed with empty list: $result")
+        @Suppress("UNCHECKED_CAST")
+        val events = (result as DavResult.Success<List<EventWithMetadata>>).value
+
+        assertTrue(events.isEmpty(), "Should return empty list")
+        println("Empty multiget correctly returned empty list")
+    }
+
+    @Test
+    @Order(86)
+    @DisplayName("86. Get sync-token from calendar")
+    fun `getSyncToken returns valid token`() {
+        assertNotNull(defaultCalendarUrl)
+
+        val result = calDavClient.getSyncToken(defaultCalendarUrl!!)
+
+        assertTrue(result is DavResult.Success, "Should get sync token: $result")
+        @Suppress("UNCHECKED_CAST")
+        val syncToken = (result as DavResult.Success<String?>).value
+
+        println("Calendar sync-token: $syncToken")
+        // Sync token may be null if server doesn't support it, but Nextcloud does
+        assertNotNull(syncToken, "Nextcloud should return sync-token")
+        assertTrue(syncToken!!.isNotBlank(), "Sync token should not be blank")
+    }
+
+    @Test
+    @Order(87)
+    @DisplayName("87. Fetch ETags only in date range (lightweight sync)")
+    fun `fetchEtagsInRange returns etags without event data`() {
+        assertNotNull(defaultCalendarUrl)
+
+        val start = Instant.now()
+        val end = start.plus(120, ChronoUnit.DAYS)
+
+        val result = calDavClient.fetchEtagsInRange(
+            calendarUrl = defaultCalendarUrl!!,
+            start = start,
+            end = end
+        )
+
+        assertTrue(result is DavResult.Success, "Should fetch etags: $result")
+        @Suppress("UNCHECKED_CAST")
+        val etags = (result as DavResult.Success<List<com.icalendar.caldav.client.EtagInfo>>).value
+
+        println("Fetched ${etags.size} ETags in date range")
+        etags.take(5).forEach { info ->
+            println("  - ${info.href} -> ${info.etag}")
+        }
+
+        // Should have etags for our test events
+        assertTrue(etags.isNotEmpty(), "Should find test events")
+        etags.forEach { info ->
+            assertTrue(info.href.isNotBlank(), "Href should not be blank")
+            assertTrue(info.etag.isNotBlank(), "ETag should not be blank")
+        }
+    }
+
+    @Test
+    @Order(88)
+    @DisplayName("88. Delete event explicitly")
+    fun `deleteEvent removes event from calendar`() {
+        val uid = generateUid("delete-test")
+        val startTime = Instant.now().plus(107, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Event To Delete
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val createResult = createAndTrackEvent(uid, icalData)
+        println("Created event for deletion test: ${createResult.href}")
+
+        // Verify it exists
+        val fetchResult = calDavClient.getEvent(createResult.href)
+        assertTrue(fetchResult is DavResult.Success, "Event should exist before delete")
+
+        // Delete it
+        val deleteResult = calDavClient.deleteEvent(createResult.href, createResult.etag)
+        assertTrue(deleteResult is DavResult.Success, "Delete should succeed: $deleteResult")
+        println("Successfully deleted event")
+
+        // Remove from tracking (already deleted)
+        createdEventUrls.removeIf { it.first == createResult.href }
+
+        // Verify it's gone
+        val afterDelete = calDavClient.getEvent(createResult.href)
+        assertTrue(
+            afterDelete is DavResult.HttpError && (afterDelete.code == 404 || afterDelete.code == 410),
+            "Event should be gone after delete: $afterDelete"
+        )
+        println("Verified event no longer exists (404/410)")
+    }
+
+    @Test
+    @Order(89)
+    @DisplayName("89. Get event returns 404 for non-existent event")
+    fun `getEvent returns 404 for missing event`() {
+        assertNotNull(defaultCalendarUrl)
+
+        val fakeUrl = "$defaultCalendarUrl/non-existent-event-${UUID.randomUUID()}.ics"
+
+        val result = calDavClient.getEvent(fakeUrl)
+
+        println("Result for non-existent event: $result")
+
+        // Should return 404 or similar error
+        assertTrue(
+            result is DavResult.HttpError,
+            "Should return HttpError for missing event: $result"
+        )
+
+        if (result is DavResult.HttpError) {
+            assertTrue(
+                result.code == 404 || result.code == 207,
+                "Should be 404 or 207 with empty results: ${result.code}"
+            )
+        }
+    }
+
     // ======================== ETag Conflict Tests ========================
 
     @Test
@@ -1604,10 +1808,17 @@ class NextcloudIntegrationTest {
         println("  ✓ URL property")
         println("\n=== Sync & Change Detection ===")
         println("  ✓ ctag retrieval")
+        println("  ✓ sync-token retrieval")
         println("  ✓ Initial sync-collection")
         println("  ✓ Incremental sync-collection")
         println("  ✓ Date range queries (calendar-query)")
+        println("  ✓ ETag-only queries (lightweight sync)")
         println("  ✓ ETag conflict detection (412 Precondition Failed)")
+        println("\n=== Multiget & CRUD ===")
+        println("  ✓ fetchEventsByHref (calendar-multiget)")
+        println("  ✓ fetchEventsByHref with empty list")
+        println("  ✓ Explicit deleteEvent with verification")
+        println("  ✓ 404 handling for non-existent event")
         println("\n=== DefaultQuirks Validation ===")
         println("  ✓ Parses real Nextcloud responses")
         println("  ✓ Extracts calendar properties correctly")
@@ -1615,7 +1826,7 @@ class NextcloudIntegrationTest {
         println("TOTAL: ${createdEventUrls.size} events created and tested")
         println("========================================")
 
-        assertTrue(createdEventUrls.size >= 25,
-            "Should have created at least 25 test events")
+        assertTrue(createdEventUrls.size >= 28,
+            "Should have created at least 28 test events")
     }
 }
