@@ -178,10 +178,11 @@ export RADICALE_URL
 export RADICALE_USER
 export RADICALE_PASS
 
-# Run tests with Gradle
+# Run tests with Gradle (--rerun forces test execution even if cached)
 ./gradlew :caldav-core:test \
     --tests "*RadicaleIntegrationTest*" \
     --info \
+    --rerun \
     2>&1 | tee radicale-test-output.log
 
 TEST_EXIT_CODE=${PIPESTATUS[0]}

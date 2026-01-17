@@ -195,6 +195,7 @@ val client = CalDavClient(
 | **Google Calendar** | OAuth token auth, specific date formatting |
 | **Fastmail** | Standard CalDAV with minor variations |
 | **Radicale** | Direct URL access (skip discovery), simple auth |
+| **Baikal** | sabre/dav based, standard CalDAV with nginx proxy |
 | **Generic CalDAV** | RFC-compliant default behavior |
 
 ## Sync Engine
@@ -569,6 +570,31 @@ client.createEvent(calendarUrl, event)
 | Calendar | `http://host:5232/{user}/{calendar}/` |
 | Event | `http://host:5232/{user}/{calendar}/{uid}.ics` |
 
+### Baikal Setup
+
+**Baikal** is a lightweight CalDAV/CardDAV server based on sabre/dav.
+
+**URL patterns (standard CalDAV):**
+| Resource | Pattern |
+|----------|---------|
+| DAV Root | `http://host/dav.php/` |
+| Principal | `http://host/dav.php/principals/{user}/` |
+| Calendar Home | `http://host/dav.php/calendars/{user}/` |
+| Calendar | `http://host/dav.php/calendars/{user}/{calendar}/` |
+| Event | `http://host/dav.php/calendars/{user}/{calendar}/{uid}.ics` |
+
+**Discovery works normally** - Baikal supports full DAV principal discovery:
+```kotlin
+val client = CalDavClient.forProvider(
+    serverUrl = "http://localhost:8081",
+    username = "user",
+    password = "password"
+)
+
+// Discovery works
+val account = client.discoverAccount("http://localhost:8081/dav.php/")
+```
+
 ## Java Interoperability
 
 iCalDAV is written in Kotlin but fully compatible with Java:
@@ -626,6 +652,7 @@ Contributions are welcome. Please open an issue to discuss significant changes b
 # Integration tests against real servers (requires Docker)
 ./run-integration-tests.sh      # Nextcloud (184 tests)
 ./run-radicale-tests.sh         # Radicale (184 tests)
+./run-baikal-tests.sh           # Baikal (184 tests)
 ```
 
 ## Security
