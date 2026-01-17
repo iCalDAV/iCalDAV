@@ -21,10 +21,14 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
 
-      - name: Import GPG key
+      - name: Prepare GPG key
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          gpg --list-keys
+          echo "$GPG_KEY" > /tmp/signing-key.asc
+          echo "signingKey<<EOF" >> $GITHUB_ENV
+          cat /tmp/signing-key.asc >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
       - name: Build and sign all modules
         run: |
@@ -32,10 +36,9 @@ jobs:
                     :webdav-core:publishMavenPublicationToLocalRepository \
                     :caldav-core:publishMavenPublicationToLocalRepository \
                     :caldav-sync:publishMavenPublicationToLocalRepository \
-                    :ics-subscription:publishMavenPublicationToLocalRepository
-        env:
-          SIGNING_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.GPG_PASSPHRASE }}
+                    :ics-subscription:publishMavenPublicationToLocalRepository \
+                    -PsigningKey="$signingKey" \
+                    -PsigningPassword="${{ secrets.GPG_PASSPHRASE }}"
 
       - name: Create bundle for Central Portal
         run: |
