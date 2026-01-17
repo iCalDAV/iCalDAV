@@ -24,11 +24,45 @@ jobs:
       - name: Build and Test
         run: ./gradlew build --no-daemon
 
-      - name: Publish to Maven Central
+      - name: Build and sign all modules
         env:
-          CENTRAL_PORTAL_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
-          CENTRAL_PORTAL_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository --no-daemon
+          ./gradlew :icalendar-core:publishMavenPublicationToLocalRepository \
+                    :webdav-core:publishMavenPublicationToLocalRepository \
+                    :caldav-core:publishMavenPublicationToLocalRepository \
+                    :caldav-sync:publishMavenPublicationToLocalRepository \
+                    :ics-subscription:publishMavenPublicationToLocalRepository \
+                    --no-daemon
+
+      - name: Create bundle for Central Portal
+        run: |
+          cd build/local-repo
+          zip -r ../../icaldav-bundle.zip .
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-central-bundle
+          path: icaldav-bundle.zip
+
+      - name: Upload to Central Portal
+        env:
+          CENTRAL_PORTAL_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          CENTRAL_PORTAL_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+        run: |
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
+            -u "${CENTRAL_PORTAL_USERNAME}:${CENTRAL_PORTAL_PASSWORD}" \
+            -F "bundle=@icaldav-bundle.zip" \
+            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=USER_MANAGED")
+
+          echo "$RESPONSE"
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+
+          if [ "$HTTP_CODE" != "201" ] && [ "$HTTP_CODE" != "200" ]; then
+            echo "Upload failed with HTTP code: $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "Bundle uploaded successfully! Check https://central.sonatype.com to verify and release."
