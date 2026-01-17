@@ -50,9 +50,14 @@ data class ICalLink(
 ) {
     /**
      * Generate iCalendar LINK property string.
+     *
+     * Always includes VALUE=URI as required by ical4j for proper parsing.
      */
     fun toICalString(): String {
         val params = mutableListOf<String>()
+
+        // VALUE=URI is required for proper parsing by ical4j
+        params.add("VALUE=URI")
 
         // Add REL parameter if not RELATED (default)
         if (relation != LinkRelationType.RELATED) {
@@ -68,9 +73,7 @@ data class ICalLink(
             params.add("GAP=$isoGap")
         }
 
-        val paramStr = if (params.isNotEmpty()) {
-            ";" + params.joinToString(";")
-        } else ""
+        val paramStr = ";" + params.joinToString(";")
 
         return "LINK$paramStr:$uri"
     }

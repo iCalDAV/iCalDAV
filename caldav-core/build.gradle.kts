@@ -81,15 +81,32 @@ publishing {
 }
 
 signing {
-    val signingKey = findProperty("signingKey") as String? ?: System.getenv("SIGNING_KEY")
-    val signingPassword = findProperty("signingPassword") as String? ?: System.getenv("SIGNING_PASSWORD")
+    val signingKeyFile = System.getenv("SIGNING_KEY_FILE")
+    val signingKey: String? = (findProperty("signingKey") as String?)?.replace("\\n", "\n")
+        ?: System.getenv("SIGNING_KEY")
+        ?: signingKeyFile?.let { path ->
+            val file = File(path)
+            if (file.exists()) file.readText() else null
+        }
+    val signingPassword: String = (findProperty("signingPassword") as String?)
+        ?: System.getenv("SIGNING_PASSWORD")
+        ?: ""
 
-    if (signingKey != null && signingPassword != null) {
+    if (!signingKey.isNullOrBlank()) {
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications["maven"])
     }
 }
 
 tasks.withType<Sign>().configureEach {
-    onlyIf { findProperty("signingKey") != null || System.getenv("SIGNING_KEY") != null }
+    onlyIf {
+        val signingKeyFile = System.getenv("SIGNING_KEY_FILE")
+        val key = (findProperty("signingKey") as String?)
+            ?: System.getenv("SIGNING_KEY")
+            ?: signingKeyFile?.let { path ->
+                val file = File(path)
+                if (file.exists()) file.readText() else null
+            }
+        !key.isNullOrBlank()
+    }
 }

@@ -47,6 +47,7 @@ coverage/
 
 # Documentation build
 dokka/
+docs/
 
 # Secrets (never commit these)
 *.jks
@@ -80,3 +81,5 @@ CLAUDE.md
 
 # Test plan (development artifact)
 TEST_PLAN.md
+# Integration test output
+integration-test-output.log

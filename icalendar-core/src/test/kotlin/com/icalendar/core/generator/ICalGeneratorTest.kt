@@ -32,13 +32,23 @@ class ICalGeneratorTest {
 
         val icalString = generator.generate(event)
 
-        // iCloud requires these
+        // Required properties for CalDAV
         assertTrue(icalString.contains("VERSION:2.0"))
         assertTrue(icalString.contains("PRODID:"))
         assertTrue(icalString.contains("CALSCALE:GREGORIAN"))
-        assertTrue(icalString.contains("METHOD:PUBLISH"))
+        // METHOD is excluded by default for CalDAV PUT (some servers reject it)
+        assertFalse(icalString.contains("METHOD:PUBLISH"))
         assertTrue(icalString.contains("SEQUENCE:"))
         assertTrue(icalString.contains("STATUS:"))
+    }
+
+    @Test
+    fun `generated iCal with includeMethod has METHOD property`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event, includeMethod = true)
+
+        assertTrue(icalString.contains("METHOD:PUBLISH"))
     }
 
     @Test
@@ -160,6 +170,193 @@ class ICalGeneratorTest {
         assertEquals(original.location, parsed.location)
     }
 
+    // VTIMEZONE integration tests
+
+    @Test
+    fun `generate includes VTIMEZONE by default`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("BEGIN:VTIMEZONE"))
+        assertTrue(icalString.contains("TZID:America/New_York"))
+        assertTrue(icalString.contains("END:VTIMEZONE"))
+    }
+
+    @Test
+    fun `generate excludes VTIMEZONE when disabled`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event, includeVTimezone = false)
+
+        assertFalse(icalString.contains("BEGIN:VTIMEZONE"))
+    }
+
+    @Test
+    fun `generate places VTIMEZONE before VEVENT`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event)
+
+        val vtimezoneIndex = icalString.indexOf("BEGIN:VTIMEZONE")
+        val veventIndex = icalString.indexOf("BEGIN:VEVENT")
+
+        assertTrue(vtimezoneIndex > 0)
+        assertTrue(vtimezoneIndex < veventIndex)
+    }
+
+    @Test
+    fun `generateBatch deduplicates timezones`() {
+        val event1 = createTestEvent(uid = "event-1")
+        val event2 = createTestEvent(uid = "event-2")
+
+        val icalString = generator.generateBatch(listOf(event1, event2))
+
+        // Should only have one VTIMEZONE for America/New_York even with two events
+        val vtimezoneCount = icalString.split("TZID:America/New_York").size - 1
+        assertEquals(1, vtimezoneCount)
+    }
+
+    @Test
+    fun `generateBatch with multiple timezones includes all`() {
+        val nyEvent = createTestEvent(uid = "ny-event")
+        val tokyoEvent = createTestEvent(uid = "tokyo-event", timezone = ZoneId.of("Asia/Tokyo"))
+
+        val icalString = generator.generateBatch(listOf(nyEvent, tokyoEvent))
+
+        assertTrue(icalString.contains("TZID:America/New_York"))
+        assertTrue(icalString.contains("TZID:Asia/Tokyo"))
+    }
+
+    // Apple VALARM extension tests
+
+    @Test
+    fun `generate includes Apple VALARM extensions by default`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-15),
+            triggerAbsolute = null,
+            description = "Reminder",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("X-WR-ALARMUID:"))
+        assertTrue(icalString.contains("X-APPLE-DEFAULT-ALARM:FALSE"))
+    }
+
+    @Test
+    fun `generate excludes Apple VALARM extensions when disabled`() {
+        val generatorNoApple = ICalGenerator(includeAppleExtensions = false)
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-15),
+            triggerAbsolute = null,
+            description = "Reminder",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generatorNoApple.generate(event)
+
+        assertFalse(icalString.contains("X-WR-ALARMUID:"))
+        assertFalse(icalString.contains("X-APPLE-DEFAULT-ALARM:"))
+    }
+
+    @Test
+    fun `generate VALARM always has UID`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-30),
+            triggerAbsolute = null,
+            description = "Test",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        // Should have UID in VALARM
+        val valarmSection = icalString.substringAfter("BEGIN:VALARM").substringBefore("END:VALARM")
+        assertTrue(valarmSection.contains("UID:"))
+    }
+
+    @Test
+    fun `generate VALARM X-WR-ALARMUID matches UID`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-10),
+            triggerAbsolute = null,
+            uid = "test-alarm-uid-123",
+            description = "Test",
+            summary = null
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("UID:test-alarm-uid-123"))
+        assertTrue(icalString.contains("X-WR-ALARMUID:test-alarm-uid-123"))
+    }
+
+    @Test
+    fun `generate VALARM omits X-APPLE-DEFAULT-ALARM when defaultAlarm is true`() {
+        val alarm = ICalAlarm(
+            action = AlarmAction.DISPLAY,
+            trigger = java.time.Duration.ofMinutes(-15),
+            triggerAbsolute = null,
+            description = "Default Alarm",
+            summary = null,
+            defaultAlarm = true
+        )
+        val event = createTestEvent(alarms = listOf(alarm))
+
+        val icalString = generator.generate(event)
+
+        // Should have X-WR-ALARMUID but NOT X-APPLE-DEFAULT-ALARM:FALSE
+        assertTrue(icalString.contains("X-WR-ALARMUID:"))
+        assertFalse(icalString.contains("X-APPLE-DEFAULT-ALARM:FALSE"))
+    }
+
+    @Test
+    fun `generate UTC event has no VTIMEZONE`() {
+        val utcStart = ICalDateTime.parse("20231215T140000Z")
+        val utcEnd = ICalDateTime.parse("20231215T150000Z")
+        val event = ICalEvent(
+            uid = "utc-event",
+            importId = "utc-event",
+            summary = "UTC Event",
+            description = null,
+            location = null,
+            dtStart = utcStart,
+            dtEnd = utcEnd,
+            duration = null,
+            isAllDay = false,
+            status = EventStatus.CONFIRMED,
+            sequence = 0,
+            rrule = null,
+            exdates = emptyList(),
+            recurrenceId = null,
+            alarms = emptyList(),
+            categories = emptyList(),
+            organizer = null,
+            attendees = emptyList(),
+            color = null,
+            dtstamp = null,
+            lastModified = null,
+            created = null,
+            transparency = Transparency.OPAQUE,
+            url = null,
+            rawProperties = emptyMap()
+        )
+
+        val icalString = generator.generate(event)
+
+        assertFalse(icalString.contains("BEGIN:VTIMEZONE"))
+    }
+
     private fun createTestEvent(
         uid: String = "test-uid-123",
         summary: String = "Test Event",
@@ -168,9 +365,10 @@ class ICalGeneratorTest {
         isAllDay: Boolean = false,
         alarms: List<ICalAlarm> = emptyList(),
         recurrenceId: ICalDateTime? = null,
-        rrule: RRule? = null
+        rrule: RRule? = null,
+        timezone: ZoneId = ZoneId.of("America/New_York")
     ): ICalEvent {
-        val zone = ZoneId.of("America/New_York")
+        val zone = timezone
         val start = ZonedDateTime.of(2023, 12, 15, 14, 0, 0, 0, zone)
         val end = ZonedDateTime.of(2023, 12, 15, 15, 0, 0, 0, zone)
 

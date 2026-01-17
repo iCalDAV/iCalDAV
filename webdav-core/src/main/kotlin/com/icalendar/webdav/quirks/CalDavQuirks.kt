@@ -196,6 +196,9 @@ interface CalDavQuirks {
                 serverUrl.contains("icloud.com", ignoreCase = true) -> ICloudQuirks()
                 serverUrl.contains("google.com", ignoreCase = true) -> DefaultQuirks("google", "Google Calendar", serverUrl)
                 serverUrl.contains("fastmail.com", ignoreCase = true) -> DefaultQuirks("fastmail", "Fastmail", serverUrl)
+                // Radicale: uses simple URL structure, skip discovery and use direct URLs
+                // URL pattern: http://host:5232/{user}/{calendar}/
+                serverUrl.contains(":5232", ignoreCase = true) -> DefaultQuirks("radicale", "Radicale", serverUrl)
                 else -> DefaultQuirks("generic", "CalDAV Server", serverUrl)
             }
         }

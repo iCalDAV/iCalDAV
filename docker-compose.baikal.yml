@@ -1,0 +1,21 @@
+services:
+  baikal:
+    image: ckulka/baikal:nginx
+    container_name: baikal-caldav-test
+    ports:
+      - "8081:80"
+    environment:
+      - BAIKAL_SERVERNAME=localhost
+    volumes:
+      - baikal_config:/var/www/baikal/config
+      - baikal_data:/var/www/baikal/Specific
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  baikal_config:
+  baikal_data:

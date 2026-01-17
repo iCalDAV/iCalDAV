@@ -509,7 +509,8 @@ class ApiContractTest {
     // Helper functions
 
     private fun createTestEvent(uid: String): ICalEvent {
-        val now = System.currentTimeMillis()
+        // Use fixed timestamp for deterministic equality tests
+        val now = 1700000000000L
         return ICalEvent(
             uid = uid,
             importId = uid,

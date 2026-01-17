@@ -191,7 +191,8 @@ class CalDavClient(
         val eventUrl = buildEventUrl(calendarUrl, event.uid)
         val icalData = iCalGenerator.generate(event)
 
-        val result = webDavClient.put(eventUrl, icalData)
+        // Use ifNoneMatch = true to fail if resource already exists (CREATE semantics)
+        val result = webDavClient.put(eventUrl, icalData, etag = null, ifNoneMatch = true)
 
         return result.map { putResponse ->
             EventCreateResult(eventUrl, putResponse.etag)

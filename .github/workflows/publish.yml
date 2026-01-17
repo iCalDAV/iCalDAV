@@ -2,7 +2,7 @@ name: Publish to Maven Central
 
 on:
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -19,23 +19,50 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Import GPG key
+      - name: Build and Test
+        run: ./gradlew build --no-daemon
+
+      - name: Decode signing key
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY }}
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          gpg --list-keys
+          # Decode base64-encoded GPG key to a file
+          # Strip any whitespace/newlines that might have been added when copying
+          echo "$SIGNING_KEY_BASE64" | tr -d '[:space:]' | base64 -d > /tmp/signing-key.asc
+          echo "SIGNING_KEY_FILE=/tmp/signing-key.asc" >> $GITHUB_ENV
+          # Verify the key was decoded properly
+          if ! grep -q "BEGIN PGP PRIVATE KEY" /tmp/signing-key.asc; then
+            echo "Error: Failed to decode signing key"
+            exit 1
+          fi
 
       - name: Build and sign all modules
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SIGNING_KEY_FILE: /tmp/signing-key.asc
         run: |
+          # Handle empty password (GitHub doesn't allow empty secrets)
+          PASS="${SIGNING_PASSWORD:-}"
+          if [ "$PASS" = " " ]; then
+            PASS=""
+          fi
+
+          # Set up environment variables for signing
+          export SIGNING_KEY="$(cat $SIGNING_KEY_FILE)"
+          export SIGNING_PASSWORD="$PASS"
+
           ./gradlew :icalendar-core:publishMavenPublicationToLocalRepository \
                     :webdav-core:publishMavenPublicationToLocalRepository \
                     :caldav-core:publishMavenPublicationToLocalRepository \
                     :caldav-sync:publishMavenPublicationToLocalRepository \
-                    :ics-subscription:publishMavenPublicationToLocalRepository
-        env:
-          SIGNING_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.GPG_PASSPHRASE }}
+                    :ics-subscription:publishMavenPublicationToLocalRepository \
+                    --no-daemon
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/signing-key.asc
 
       - name: Create bundle for Central Portal
         run: |
@@ -49,12 +76,21 @@ jobs:
           path: icaldav-bundle.zip
 
       - name: Upload to Central Portal
+        env:
+          CENTRAL_PORTAL_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          CENTRAL_PORTAL_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
         run: |
           RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
-            -u "${{ secrets.CENTRAL_PORTAL_USERNAME }}:${{ secrets.CENTRAL_PORTAL_PASSWORD }}" \
+            -u "${CENTRAL_PORTAL_USERNAME}:${CENTRAL_PORTAL_PASSWORD}" \
             -F "bundle=@icaldav-bundle.zip" \
-            "https://central.sonatype.com/api/v1/publisher/upload")
+            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=USER_MANAGED")
+
           echo "$RESPONSE"
-          if echo "$RESPONSE" | grep -q "error"; then
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+
+          if [ "$HTTP_CODE" != "201" ] && [ "$HTTP_CODE" != "200" ]; then
+            echo "Upload failed with HTTP code: $HTTP_CODE"
             exit 1
           fi
+
+          echo "Bundle uploaded successfully! Check https://central.sonatype.com to verify and release."

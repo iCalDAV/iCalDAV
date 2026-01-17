@@ -18,7 +18,7 @@ Built for production use with real-world CalDAV servers including iCloud, Google
 | **Offline support is complex** | Built-in operation queue with automatic coalescing |
 | **Conflict resolution** | Multiple strategies: server-wins, local-wins, newest-wins, manual merge |
 | **Server differences** | Auto-detected provider quirks for iCloud, Google, Fastmail |
-| **Reliability concerns** | 900+ tests, production-proven with real CalDAV servers |
+| **Reliability concerns** | 1100+ tests, production-proven with real CalDAV servers |
 
 ## Features
 
@@ -192,8 +192,10 @@ val client = CalDavClient(
 | Provider | Quirks Handled |
 |----------|----------------|
 | **iCloud** | CDATA-wrapped responses, non-prefixed XML namespaces, regional server redirects, app-specific passwords, eventual consistency |
-| **Google Calendar** | OAuth token auth, specific date formatting |
+| **Google Calendar** | OAuth2 bearer auth, no MKCALENDAR, no VTODO |
 | **Fastmail** | Standard CalDAV with minor variations |
+| **Radicale** | Direct URL access (skip discovery), simple auth |
+| **Baikal** | sabre/dav based, standard CalDAV with nginx proxy |
 | **Generic CalDAV** | RFC-compliant default behavior |
 
 ## Sync Engine
@@ -299,7 +301,8 @@ val icalString = generator.generate(event)
 | **Recurrence** | RRULE, EXDATE, RECURRENCE-ID |
 | **People** | ORGANIZER, ATTENDEE |
 | **Alerts** | VALARM (DISPLAY, EMAIL, AUDIO) |
-| **Extended** | CATEGORIES, URL, ATTACH, IMAGE, CONFERENCE |
+| **Extended** | CATEGORIES, URL, ATTACH, IMAGE, CONFERENCE, CLASS |
+| **Vendor** | X-* properties preserved for round-trip fidelity |
 
 ### Timezone Handling
 
@@ -544,6 +547,92 @@ val allEvents = chunks.flatMap { (chunkStart, chunkEnd) ->
 }
 ```
 
+### Radicale Discovery Fails
+
+**Cause:** Radicale uses a simpler URL structure without DAV principal discovery.
+
+**Solution:** Skip discovery and use direct URLs:
+```kotlin
+val client = CalDavClient.withBasicAuth(username, password)
+
+// Radicale URL pattern: http://host:5232/{username}/{calendar}/
+val calendarUrl = "http://localhost:5232/$username/personal/"
+
+// All operations work with direct URLs
+val events = client.fetchEventsInRange(calendarUrl, startMs, endMs)
+val syncResult = client.syncCollection(calendarUrl, syncToken)
+client.createEvent(calendarUrl, event)
+```
+
+**Radicale URL patterns:**
+| Resource | Pattern |
+|----------|---------|
+| Calendar Home | `http://host:5232/{user}/` |
+| Calendar | `http://host:5232/{user}/{calendar}/` |
+| Event | `http://host:5232/{user}/{calendar}/{uid}.ics` |
+
+### Baikal Setup
+
+**Baikal** is a lightweight CalDAV/CardDAV server based on sabre/dav.
+
+**URL patterns (standard CalDAV):**
+| Resource | Pattern |
+|----------|---------|
+| DAV Root | `http://host/dav.php/` |
+| Principal | `http://host/dav.php/principals/{user}/` |
+| Calendar Home | `http://host/dav.php/calendars/{user}/` |
+| Calendar | `http://host/dav.php/calendars/{user}/{calendar}/` |
+| Event | `http://host/dav.php/calendars/{user}/{calendar}/{uid}.ics` |
+
+**Discovery works normally** - Baikal supports full DAV principal discovery:
+```kotlin
+val client = CalDavClient.forProvider(
+    serverUrl = "http://localhost:8081",
+    username = "user",
+    password = "password"
+)
+
+// Discovery works
+val account = client.discoverAccount("http://localhost:8081/dav.php/")
+```
+
+### Google Calendar (OAuth2)
+
+**Google Calendar** requires OAuth2 authentication - basic auth is not supported.
+
+**Limitations:**
+- No MKCALENDAR (calendars must be created via Google Calendar UI/API)
+- No VTODO/VJOURNAL support
+- No LOCK/UNLOCK/COPY/MOVE
+
+**Usage with Bearer token:**
+```kotlin
+// Get OAuth2 access token via Google's OAuth flow
+val accessToken = "ya29.a0..." // Your OAuth2 access token
+
+// Create client with bearer auth
+val auth = DavAuth.Bearer(accessToken)
+val httpClient = WebDavClient.withAuth(auth)
+val client = CalDavClient(WebDavClient(httpClient, auth))
+
+// Google CalDAV URLs
+val baseUrl = "https://apidata.googleusercontent.com/caldav/v2"
+val calendarUrl = "$baseUrl/primary/events/" // or specific calendar ID
+
+// All operations work with bearer auth
+val events = client.fetchEventsInRange(calendarUrl, startMs, endMs)
+client.createEvent(calendarUrl, event)
+```
+
+**URL patterns:**
+| Resource | Pattern |
+|----------|---------|
+| Principal | `https://apidata.googleusercontent.com/caldav/v2/{calendarId}/user` |
+| Calendar | `https://apidata.googleusercontent.com/caldav/v2/{calendarId}/events/` |
+| Event | `https://apidata.googleusercontent.com/caldav/v2/{calendarId}/events/{uid}.ics` |
+
+**Note:** `{calendarId}` is `primary` for the main calendar or the calendar's email address found in Google Calendar settings.
+
 ## Java Interoperability
 
 iCalDAV is written in Kotlin but fully compatible with Java:
@@ -569,6 +658,7 @@ if (result instanceof DavResult.Success) {
 | RFC 6578 | Collection Sync | Full |
 | RFC 7986 | iCalendar Extensions | Partial (IMAGE, CONFERENCE) |
 | RFC 9073 | Structured Locations | Partial |
+| RFC 9253 | iCalendar Relationships | Full (LINK, RELATED-TO) |
 
 ## Links
 
@@ -587,7 +677,7 @@ Contributions are welcome. Please open an issue to discuss significant changes b
 ### Running Tests
 
 ```bash
-# Full test suite (900+ tests)
+# Full test suite (1100+ tests)
 ./gradlew test
 
 # Specific module
@@ -596,6 +686,15 @@ Contributions are welcome. Please open an issue to discuss significant changes b
 
 # With coverage report
 ./gradlew test jacocoTestReport
+
+# Integration tests against real servers (requires Docker)
+./run-integration-tests.sh      # Nextcloud (184 tests)
+./run-radicale-tests.sh         # Radicale (184 tests)
+./run-baikal-tests.sh           # Baikal (184 tests)
+
+# Google Calendar (requires OAuth2 setup)
+./run-google-tests.sh --setup   # Show OAuth2 setup instructions
+./run-google-tests.sh           # Run tests (requires env vars)
 ```
 
 ## Security

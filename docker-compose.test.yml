@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  nextcloud:
+    image: nextcloud:28-apache
+    container_name: nextcloud-caldav-test
+    ports:
+      - "8080:80"
+    environment:
+      - SQLITE_DATABASE=nextcloud
+      - NEXTCLOUD_ADMIN_USER=testuser
+      - NEXTCLOUD_ADMIN_PASSWORD=testpass123
+      - NEXTCLOUD_TRUSTED_DOMAINS=localhost
+    volumes:
+      - nextcloud_data:/var/www/html
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/status.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  nextcloud_data:
