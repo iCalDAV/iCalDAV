@@ -170,6 +170,101 @@ class ICalGeneratorTest {
         assertEquals(original.location, parsed.location)
     }
 
+    // VTIMEZONE integration tests
+
+    @Test
+    fun `generate includes VTIMEZONE by default`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("BEGIN:VTIMEZONE"))
+        assertTrue(icalString.contains("TZID:America/New_York"))
+        assertTrue(icalString.contains("END:VTIMEZONE"))
+    }
+
+    @Test
+    fun `generate excludes VTIMEZONE when disabled`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event, includeVTimezone = false)
+
+        assertFalse(icalString.contains("BEGIN:VTIMEZONE"))
+    }
+
+    @Test
+    fun `generate places VTIMEZONE before VEVENT`() {
+        val event = createTestEvent()
+
+        val icalString = generator.generate(event)
+
+        val vtimezoneIndex = icalString.indexOf("BEGIN:VTIMEZONE")
+        val veventIndex = icalString.indexOf("BEGIN:VEVENT")
+
+        assertTrue(vtimezoneIndex > 0)
+        assertTrue(vtimezoneIndex < veventIndex)
+    }
+
+    @Test
+    fun `generateBatch deduplicates timezones`() {
+        val event1 = createTestEvent(uid = "event-1")
+        val event2 = createTestEvent(uid = "event-2")
+
+        val icalString = generator.generateBatch(listOf(event1, event2))
+
+        // Should only have one VTIMEZONE for America/New_York even with two events
+        val vtimezoneCount = icalString.split("TZID:America/New_York").size - 1
+        assertEquals(1, vtimezoneCount)
+    }
+
+    @Test
+    fun `generateBatch with multiple timezones includes all`() {
+        val nyEvent = createTestEvent(uid = "ny-event")
+        val tokyoEvent = createTestEvent(uid = "tokyo-event", timezone = ZoneId.of("Asia/Tokyo"))
+
+        val icalString = generator.generateBatch(listOf(nyEvent, tokyoEvent))
+
+        assertTrue(icalString.contains("TZID:America/New_York"))
+        assertTrue(icalString.contains("TZID:Asia/Tokyo"))
+    }
+
+    @Test
+    fun `generate UTC event has no VTIMEZONE`() {
+        val utcStart = ICalDateTime.parse("20231215T140000Z")
+        val utcEnd = ICalDateTime.parse("20231215T150000Z")
+        val event = ICalEvent(
+            uid = "utc-event",
+            importId = "utc-event",
+            summary = "UTC Event",
+            description = null,
+            location = null,
+            dtStart = utcStart,
+            dtEnd = utcEnd,
+            duration = null,
+            isAllDay = false,
+            status = EventStatus.CONFIRMED,
+            sequence = 0,
+            rrule = null,
+            exdates = emptyList(),
+            recurrenceId = null,
+            alarms = emptyList(),
+            categories = emptyList(),
+            organizer = null,
+            attendees = emptyList(),
+            color = null,
+            dtstamp = null,
+            lastModified = null,
+            created = null,
+            transparency = Transparency.OPAQUE,
+            url = null,
+            rawProperties = emptyMap()
+        )
+
+        val icalString = generator.generate(event)
+
+        assertFalse(icalString.contains("BEGIN:VTIMEZONE"))
+    }
+
     private fun createTestEvent(
         uid: String = "test-uid-123",
         summary: String = "Test Event",
@@ -178,9 +273,10 @@ class ICalGeneratorTest {
         isAllDay: Boolean = false,
         alarms: List<ICalAlarm> = emptyList(),
         recurrenceId: ICalDateTime? = null,
-        rrule: RRule? = null
+        rrule: RRule? = null,
+        timezone: ZoneId = ZoneId.of("America/New_York")
     ): ICalEvent {
-        val zone = ZoneId.of("America/New_York")
+        val zone = timezone
         val start = ZonedDateTime.of(2023, 12, 15, 14, 0, 0, 0, zone)
         val end = ZonedDateTime.of(2023, 12, 15, 15, 0, 0, 0, zone)
 

@@ -367,7 +367,9 @@ class RecurringEventModificationTest {
             val ical = generator.generate(event)
 
             assertTrue(ical.contains("RECURRENCE-ID"), "Modified instance should have RECURRENCE-ID")
-            assertFalse(ical.contains("RRULE"), "Modified instance should NOT have RRULE")
+            // Check that RRULE doesn't appear in VEVENT section (VTIMEZONE may have RRULE for DST)
+            val veventSection = ical.substringAfter("BEGIN:VEVENT").substringBefore("END:VEVENT")
+            assertFalse(veventSection.contains("RRULE"), "Modified instance VEVENT should NOT have RRULE")
         }
 
         @Test

@@ -1097,6 +1097,268 @@ class NextcloudIntegrationTest {
         assertEquals("New York Meeting", fetched.event.summary)
     }
 
+    @Test
+    @Order(51)
+    @DisplayName("51. Create event with generated VTIMEZONE America/New_York")
+    fun `create event with generated VTIMEZONE New York`() {
+        val uid = generateUid("vtimezone-ny-gen")
+        val zone = ZoneId.of("America/New_York")
+        val start = java.time.ZonedDateTime.of(2026, 3, 15, 10, 0, 0, 0, zone)
+        val end = java.time.ZonedDateTime.of(2026, 3, 15, 11, 0, 0, 0, zone)
+
+        val event = ICalEvent(
+            uid = uid,
+            importId = uid,
+            summary = "Generated VTIMEZONE Test - New York",
+            description = "Event created using ICalGenerator with VTIMEZONE",
+            location = "New York Office",
+            dtStart = ICalDateTime.fromZonedDateTime(start),
+            dtEnd = ICalDateTime.fromZonedDateTime(end),
+            duration = null,
+            isAllDay = false,
+            status = EventStatus.CONFIRMED,
+            sequence = 0,
+            rrule = null,
+            exdates = emptyList(),
+            recurrenceId = null,
+            alarms = emptyList(),
+            categories = emptyList(),
+            organizer = null,
+            attendees = emptyList(),
+            color = null,
+            dtstamp = null,
+            lastModified = null,
+            created = null,
+            transparency = Transparency.OPAQUE,
+            url = null,
+            rawProperties = emptyMap()
+        )
+
+        val generator = com.icalendar.core.generator.ICalGenerator()
+        val icalData = generator.generate(event, includeVTimezone = true)
+
+        // Verify VTIMEZONE is present
+        assertTrue(icalData.contains("BEGIN:VTIMEZONE"), "Should include VTIMEZONE")
+        assertTrue(icalData.contains("TZID:America/New_York"), "Should have correct TZID")
+        assertTrue(icalData.contains("BEGIN:STANDARD"), "Should have STANDARD component")
+        assertTrue(icalData.contains("BEGIN:DAYLIGHT"), "Should have DAYLIGHT component")
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with generated VTIMEZONE (New York): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        assertEquals("Generated VTIMEZONE Test - New York", fetched.event.summary)
+        assertEquals("America/New_York", fetched.event.dtStart.timezone?.id)
+    }
+
+    @Test
+    @Order(52)
+    @DisplayName("52. Create event with generated VTIMEZONE Europe/London")
+    fun `create event with generated VTIMEZONE London`() {
+        val uid = generateUid("vtimezone-london-gen")
+        val zone = ZoneId.of("Europe/London")
+        val start = java.time.ZonedDateTime.of(2026, 6, 15, 14, 0, 0, 0, zone)
+        val end = java.time.ZonedDateTime.of(2026, 6, 15, 15, 30, 0, 0, zone)
+
+        val event = ICalEvent(
+            uid = uid,
+            importId = uid,
+            summary = "Generated VTIMEZONE Test - London",
+            description = "Event with European DST timezone",
+            location = "London Office",
+            dtStart = ICalDateTime.fromZonedDateTime(start),
+            dtEnd = ICalDateTime.fromZonedDateTime(end),
+            duration = null,
+            isAllDay = false,
+            status = EventStatus.CONFIRMED,
+            sequence = 0,
+            rrule = null,
+            exdates = emptyList(),
+            recurrenceId = null,
+            alarms = emptyList(),
+            categories = emptyList(),
+            organizer = null,
+            attendees = emptyList(),
+            color = null,
+            dtstamp = null,
+            lastModified = null,
+            created = null,
+            transparency = Transparency.OPAQUE,
+            url = null,
+            rawProperties = emptyMap()
+        )
+
+        val generator = com.icalendar.core.generator.ICalGenerator()
+        val icalData = generator.generate(event, includeVTimezone = true)
+
+        // Europe uses Sunday patterns for DST transitions
+        assertTrue(icalData.contains("TZID:Europe/London"), "Should have Europe/London TZID")
+        assertTrue(icalData.contains("SU"), "Should have Sunday transitions")
+        assertTrue(icalData.contains("BYMONTH=3") || icalData.contains("BYMONTH=10"),
+            "Should have March or October transition")
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with generated VTIMEZONE (London): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        assertEquals("Generated VTIMEZONE Test - London", fetched.event.summary)
+    }
+
+    @Test
+    @Order(53)
+    @DisplayName("53. Create event with generated VTIMEZONE Australia/Sydney")
+    fun `create event with generated VTIMEZONE Sydney`() {
+        val uid = generateUid("vtimezone-sydney-gen")
+        val zone = ZoneId.of("Australia/Sydney")
+        val start = java.time.ZonedDateTime.of(2026, 12, 15, 9, 0, 0, 0, zone)
+        val end = java.time.ZonedDateTime.of(2026, 12, 15, 10, 0, 0, 0, zone)
+
+        val event = ICalEvent(
+            uid = uid,
+            importId = uid,
+            summary = "Generated VTIMEZONE Test - Sydney",
+            description = "Event with southern hemisphere DST",
+            location = "Sydney Office",
+            dtStart = ICalDateTime.fromZonedDateTime(start),
+            dtEnd = ICalDateTime.fromZonedDateTime(end),
+            duration = null,
+            isAllDay = false,
+            status = EventStatus.CONFIRMED,
+            sequence = 0,
+            rrule = null,
+            exdates = emptyList(),
+            recurrenceId = null,
+            alarms = emptyList(),
+            categories = emptyList(),
+            organizer = null,
+            attendees = emptyList(),
+            color = null,
+            dtstamp = null,
+            lastModified = null,
+            created = null,
+            transparency = Transparency.OPAQUE,
+            url = null,
+            rawProperties = emptyMap()
+        )
+
+        val generator = com.icalendar.core.generator.ICalGenerator()
+        val icalData = generator.generate(event, includeVTimezone = true)
+
+        // Sydney uses +1000/+1100 offsets
+        assertTrue(icalData.contains("TZID:Australia/Sydney"), "Should have Australia/Sydney TZID")
+        assertTrue(icalData.contains("+1000") || icalData.contains("+1100"), "Should have Australian offsets")
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with generated VTIMEZONE (Sydney): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        assertEquals("Generated VTIMEZONE Test - Sydney", fetched.event.summary)
+    }
+
+    @Test
+    @Order(54)
+    @DisplayName("54. Create event with generated VTIMEZONE Asia/Kolkata (fixed offset)")
+    fun `create event with generated VTIMEZONE Kolkata`() {
+        val uid = generateUid("vtimezone-kolkata-gen")
+        val zone = ZoneId.of("Asia/Kolkata")
+        val start = java.time.ZonedDateTime.of(2026, 8, 20, 15, 30, 0, 0, zone)
+        val end = java.time.ZonedDateTime.of(2026, 8, 20, 16, 30, 0, 0, zone)
+
+        val event = ICalEvent(
+            uid = uid,
+            importId = uid,
+            summary = "Generated VTIMEZONE Test - Kolkata",
+            description = "Event with fixed +0530 offset (no DST)",
+            location = "Mumbai Office",
+            dtStart = ICalDateTime.fromZonedDateTime(start),
+            dtEnd = ICalDateTime.fromZonedDateTime(end),
+            duration = null,
+            isAllDay = false,
+            status = EventStatus.CONFIRMED,
+            sequence = 0,
+            rrule = null,
+            exdates = emptyList(),
+            recurrenceId = null,
+            alarms = emptyList(),
+            categories = emptyList(),
+            organizer = null,
+            attendees = emptyList(),
+            color = null,
+            dtstamp = null,
+            lastModified = null,
+            created = null,
+            transparency = Transparency.OPAQUE,
+            url = null,
+            rawProperties = emptyMap()
+        )
+
+        val generator = com.icalendar.core.generator.ICalGenerator()
+        val icalData = generator.generate(event, includeVTimezone = true)
+
+        // India uses fixed +0530 offset, no DAYLIGHT
+        assertTrue(icalData.contains("TZID:Asia/Kolkata"), "Should have Asia/Kolkata TZID")
+        assertTrue(icalData.contains("+0530"), "Should have +0530 offset")
+        assertFalse(icalData.contains("BEGIN:DAYLIGHT"), "Should NOT have DAYLIGHT (no DST)")
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event with generated VTIMEZONE (Kolkata): ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        assertEquals("Generated VTIMEZONE Test - Kolkata", fetched.event.summary)
+    }
+
+    @Test
+    @Order(55)
+    @DisplayName("55. Create event without VTIMEZONE (disabled)")
+    fun `create event without VTIMEZONE when disabled`() {
+        val uid = generateUid("no-vtimezone")
+        val zone = ZoneId.of("America/Chicago")
+        val start = java.time.ZonedDateTime.of(2026, 5, 10, 13, 0, 0, 0, zone)
+        val end = java.time.ZonedDateTime.of(2026, 5, 10, 14, 0, 0, 0, zone)
+
+        val event = ICalEvent(
+            uid = uid,
+            importId = uid,
+            summary = "No VTIMEZONE Test",
+            description = "Event created without VTIMEZONE component",
+            location = "Chicago Office",
+            dtStart = ICalDateTime.fromZonedDateTime(start),
+            dtEnd = ICalDateTime.fromZonedDateTime(end),
+            duration = null,
+            isAllDay = false,
+            status = EventStatus.CONFIRMED,
+            sequence = 0,
+            rrule = null,
+            exdates = emptyList(),
+            recurrenceId = null,
+            alarms = emptyList(),
+            categories = emptyList(),
+            organizer = null,
+            attendees = emptyList(),
+            color = null,
+            dtstamp = null,
+            lastModified = null,
+            created = null,
+            transparency = Transparency.OPAQUE,
+            url = null,
+            rawProperties = emptyMap()
+        )
+
+        val generator = com.icalendar.core.generator.ICalGenerator()
+        val icalData = generator.generate(event, includeVTimezone = false)
+
+        // Should NOT contain VTIMEZONE
+        assertFalse(icalData.contains("BEGIN:VTIMEZONE"), "Should NOT include VTIMEZONE")
+        // But should still have TZID reference
+        assertTrue(icalData.contains("TZID=America/Chicago"), "Should reference TZID in DTSTART")
+
+        val result = createAndTrackEvent(uid, icalData)
+        println("Created event without VTIMEZONE: ${result.href}")
+
+        val fetched = fetchAndVerify(result.href)
+        assertEquals("No VTIMEZONE Test", fetched.event.summary)
+    }
+
     // ======================== VALARM Tests ========================
 
     @Test

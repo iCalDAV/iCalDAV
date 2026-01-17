@@ -13,19 +13,29 @@ import java.time.format.DateTimeFormatter
  *
  * Handles all required fields for iCloud compatibility:
  * Missing CALSCALE, METHOD, STATUS, or SEQUENCE → HTTP 400
+ *
+ * VTIMEZONE generation is enabled by default for better interoperability
+ * with calendar clients that don't recognize IANA timezone IDs.
  */
 class ICalGenerator(
     private val prodId: String = "-//iCalDAV//EN"
 ) {
+    private val vtimezoneGenerator = VTimezoneGenerator()
     /**
      * Generate iCal string for a single event.
      *
      * @param event The event to generate
      * @param includeMethod Include METHOD:PUBLISH (some CalDAV servers like Nextcloud
      *                      reject this for PUT operations - set to false for CalDAV)
+     * @param includeVTimezone Include VTIMEZONE components for referenced timezones
+     *                         (enabled by default for better interoperability)
      * @return Complete VCALENDAR string
      */
-    fun generate(event: ICalEvent, includeMethod: Boolean = false): String {
+    fun generate(
+        event: ICalEvent,
+        includeMethod: Boolean = false,
+        includeVTimezone: Boolean = true
+    ): String {
         return buildString {
             // VCALENDAR header
             appendLine("BEGIN:VCALENDAR")
@@ -34,6 +44,14 @@ class ICalGenerator(
             appendLine("CALSCALE:GREGORIAN")
             if (includeMethod) {
                 appendLine("METHOD:PUBLISH")
+            }
+
+            // VTIMEZONE components (before VEVENT per RFC 5545)
+            if (includeVTimezone) {
+                val tzids = vtimezoneGenerator.collectTimezones(listOf(event))
+                tzids.forEach { tzid ->
+                    append(vtimezoneGenerator.generate(tzid))
+                }
             }
 
             // VEVENT
@@ -45,8 +63,18 @@ class ICalGenerator(
 
     /**
      * Generate iCal string for multiple events (batch).
+     *
+     * @param events List of events to generate
+     * @param includeMethod Include METHOD:PUBLISH
+     * @param includeVTimezone Include VTIMEZONE components for referenced timezones
+     *                         (enabled by default, deduplicates across all events)
+     * @return Complete VCALENDAR string with all events
      */
-    fun generateBatch(events: List<ICalEvent>, includeMethod: Boolean = true): String {
+    fun generateBatch(
+        events: List<ICalEvent>,
+        includeMethod: Boolean = true,
+        includeVTimezone: Boolean = true
+    ): String {
         return buildString {
             appendLine("BEGIN:VCALENDAR")
             appendLine("VERSION:2.0")
@@ -54,6 +82,14 @@ class ICalGenerator(
             appendLine("CALSCALE:GREGORIAN")
             if (includeMethod) {
                 appendLine("METHOD:PUBLISH")
+            }
+
+            // VTIMEZONE components (deduplicated across all events)
+            if (includeVTimezone) {
+                val tzids = vtimezoneGenerator.collectTimezones(events)
+                tzids.forEach { tzid ->
+                    append(vtimezoneGenerator.generate(tzid))
+                }
             }
 
             events.forEach { event ->
