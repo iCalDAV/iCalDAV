@@ -351,7 +351,8 @@ class CalDavClient(
             EventWithMetadata(
                 event = event,
                 href = href,
-                etag = etag
+                etag = etag,
+                rawIcal = icalData
             )
         }
     }
@@ -451,11 +452,23 @@ class CalDavClient(
 
 /**
  * Event with server metadata.
+ *
+ * @property event Parsed event data
+ * @property href Event resource URL
+ * @property etag ETag for conflict detection
+ * @property rawIcal Original iCalendar data as received from server.
+ *                   Contains complete VCALENDAR (including VTIMEZONE, all VEVENTs).
+ *                   For multi-event .ics files, all events share the same rawIcal.
+ *
+ * Note: rawIcal participates in equals/hashCode. Two instances with identical
+ * event/href/etag but different rawIcal (e.g., whitespace) are considered unequal.
+ * If this affects your use case, compare using event/href/etag fields directly.
  */
 data class EventWithMetadata(
     val event: ICalEvent,
     val href: String,
-    val etag: String?
+    val etag: String?,
+    val rawIcal: String? = null
 )
 
 /**

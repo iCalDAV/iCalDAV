@@ -798,6 +798,269 @@ END:VCALENDAR</C:calendar-data>
     }
 
     @Nested
+    @DisplayName("Raw iCal Preservation")
+    inner class RawIcalPreservationTests {
+
+        @Test
+        fun `fetchEvents preserves rawIcal`() {
+            val icalData = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:event-with-custom-prop
+DTSTART:20231215T100000Z
+DTEND:20231215T110000Z
+SUMMARY:Test Event
+X-CUSTOM-PROP:custom-value
+END:VEVENT
+END:VCALENDAR"""
+
+            val xmlResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/cal/event1.ics</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:getetag>"etag123"</D:getetag>
+                                <C:calendar-data>$icalData</C:calendar-data>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(207)
+                    .setBody(xmlResponse)
+            )
+
+            val result = calDavClient.fetchEvents(serverUrl("/cal/"))
+
+            assertIs<DavResult.Success<List<EventWithMetadata>>>(result)
+            val events = (result as DavResult.Success).value
+            assertEquals(1, events.size)
+            assertNotNull(events[0].rawIcal)
+            assertTrue(events[0].rawIcal!!.contains("X-CUSTOM-PROP:custom-value"))
+            assertTrue(events[0].rawIcal!!.contains("BEGIN:VCALENDAR"))
+        }
+
+        @Test
+        fun `multi-event ics shares rawIcal`() {
+            val icalData = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:recurring-meeting
+DTSTART:20231215T100000Z
+DTEND:20231215T110000Z
+RRULE:FREQ=DAILY;COUNT=5
+SUMMARY:Daily Standup
+END:VEVENT
+BEGIN:VEVENT
+UID:recurring-meeting
+RECURRENCE-ID:20231216T100000Z
+DTSTART:20231216T140000Z
+DTEND:20231216T150000Z
+SUMMARY:Daily Standup (Moved)
+END:VEVENT
+END:VCALENDAR"""
+
+            val xmlResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/cal/recurring.ics</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:getetag>"etag"</D:getetag>
+                                <C:calendar-data>$icalData</C:calendar-data>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(207)
+                    .setBody(xmlResponse)
+            )
+
+            val result = calDavClient.fetchEvents(serverUrl("/cal/"))
+
+            assertIs<DavResult.Success<List<EventWithMetadata>>>(result)
+            val events = (result as DavResult.Success).value
+            assertEquals(2, events.size)
+            // Both events should have the same rawIcal
+            assertEquals(events[0].rawIcal, events[1].rawIcal)
+            // Both should contain the full VCALENDAR with both VEVENTs
+            assertTrue(events[0].rawIcal!!.contains("RRULE:FREQ=DAILY"))
+            assertTrue(events[0].rawIcal!!.contains("RECURRENCE-ID"))
+        }
+
+        @Test
+        fun `rawIcal contains complete VCALENDAR`() {
+            val icalData = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VTIMEZONE
+TZID:America/New_York
+BEGIN:STANDARD
+DTSTART:19701101T020000
+RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU
+TZOFFSETFROM:-0400
+TZOFFSETTO:-0500
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:tz-event
+DTSTART;TZID=America/New_York:20231215T100000
+DTEND;TZID=America/New_York:20231215T110000
+SUMMARY:Test with TZ
+END:VEVENT
+END:VCALENDAR"""
+
+            val xmlResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/cal/tz-event.ics</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:getetag>"etag"</D:getetag>
+                                <C:calendar-data>$icalData</C:calendar-data>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(207)
+                    .setBody(xmlResponse)
+            )
+
+            val result = calDavClient.fetchEvents(serverUrl("/cal/"))
+
+            assertIs<DavResult.Success<List<EventWithMetadata>>>(result)
+            val events = (result as DavResult.Success).value
+            assertEquals(1, events.size)
+            val rawIcal = events[0].rawIcal!!
+            assertTrue(rawIcal.contains("BEGIN:VCALENDAR"))
+            assertTrue(rawIcal.contains("END:VCALENDAR"))
+            assertTrue(rawIcal.contains("BEGIN:VTIMEZONE"))
+            assertTrue(rawIcal.contains("END:VTIMEZONE"))
+        }
+
+        @Test
+        fun `syncCollection preserves rawIcal`() {
+            val icalData = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:sync-event
+DTSTART:20231215T100000Z
+SUMMARY:Synced Event
+X-SYNC-PROP:sync-value
+END:VEVENT
+END:VCALENDAR"""
+
+            val xmlResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/cal/sync-event.ics</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:getetag>"etag1"</D:getetag>
+                                <C:calendar-data>$icalData</C:calendar-data>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                    <D:sync-token>sync-token-new</D:sync-token>
+                </D:multistatus>
+            """.trimIndent()
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(207)
+                    .setBody(xmlResponse)
+            )
+
+            val result = calDavClient.syncCollection(serverUrl("/cal/"))
+
+            assertIs<DavResult.Success<SyncResult>>(result)
+            val syncResult = (result as DavResult.Success).value
+            assertEquals(1, syncResult.added.size)
+            assertNotNull(syncResult.added[0].rawIcal)
+            assertTrue(syncResult.added[0].rawIcal!!.contains("X-SYNC-PROP:sync-value"))
+        }
+
+        @Test
+        fun `getEvent preserves rawIcal`() {
+            val icalData = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:single-event
+DTSTART:20231215T100000Z
+SUMMARY:Single Event
+X-GET-PROP:get-value
+END:VEVENT
+END:VCALENDAR"""
+
+            val xmlResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/cal/single-event.ics</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:getetag>"etag"</D:getetag>
+                                <C:calendar-data>$icalData</C:calendar-data>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(207)
+                    .setBody(xmlResponse)
+            )
+
+            val result = calDavClient.getEvent(serverUrl("/cal/single-event.ics"))
+
+            assertIs<DavResult.Success<EventWithMetadata>>(result)
+            val event = (result as DavResult.Success).value
+            assertNotNull(event.rawIcal)
+            assertTrue(event.rawIcal!!.contains("X-GET-PROP:get-value"))
+        }
+
+        @Test
+        fun `construction without rawIcal defaults to null`() {
+            // Verify backward compatibility - the 3-arg constructor should still work
+            val event = createTestEvent()
+            val eventWithMetadata = EventWithMetadata(
+                event = event,
+                href = "/cal/test.ics",
+                etag = "etag123"
+            )
+
+            assertEquals(event, eventWithMetadata.event)
+            assertEquals("/cal/test.ics", eventWithMetadata.href)
+            assertEquals("etag123", eventWithMetadata.etag)
+            assertEquals(null, eventWithMetadata.rawIcal)
+        }
+    }
+
+    @Nested
     @DisplayName("Real-World Edge Cases")
     inner class RealWorldEdgeCasesTests {
 
