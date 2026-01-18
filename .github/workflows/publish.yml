@@ -53,11 +53,9 @@ jobs:
           export SIGNING_KEY="$(cat $SIGNING_KEY_FILE)"
           export SIGNING_PASSWORD="$PASS"
 
-          ./gradlew :icalendar-core:publishMavenPublicationToLocalRepository \
-                    :webdav-core:publishMavenPublicationToLocalRepository \
-                    :caldav-core:publishMavenPublicationToLocalRepository \
-                    :caldav-sync:publishMavenPublicationToLocalRepository \
-                    :ics-subscription:publishMavenPublicationToLocalRepository \
+          ./gradlew :icaldav-core:publishMavenPublicationToLocalRepository \
+                    :icaldav-client:publishMavenPublicationToLocalRepository \
+                    :icaldav-sync:publishMavenPublicationToLocalRepository \
                     --no-daemon
 
       - name: Cleanup

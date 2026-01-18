@@ -265,7 +265,7 @@ export BAIKAL_USER
 export BAIKAL_PASS
 
 # Run tests with Gradle (--rerun forces test execution even if cached)
-./gradlew :caldav-core:test \
+./gradlew :icaldav-client:test \
     --tests "*BaikalIntegrationTest*" \
     --info \
     --rerun \
@@ -283,8 +283,8 @@ else
 fi
 
 # Print test report location
-if [ -f "caldav-core/build/reports/tests/test/index.html" ]; then
-    log_info "Test report: caldav-core/build/reports/tests/test/index.html"
+if [ -f "icaldav-client/build/reports/tests/test/index.html" ]; then
+    log_info "Test report: icaldav-client/build/reports/tests/test/index.html"
 fi
 
 if [ "$KEEP_RUNNING" = true ]; then

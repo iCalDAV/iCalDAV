@@ -14,12 +14,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "iCalDAV"
+rootProject.name = "icaldav"
 
-include(":icalendar-core")
-include(":webdav-core")
-include(":caldav-core")
-include(":caldav-sync")
-include(":ics-subscription")
-// TODO: Implement caldav-android module when Android-specific utilities are needed
-// TODO: Add sample module with usage examples
+include(":icaldav-core")
+include(":icaldav-client")
+include(":icaldav-sync")

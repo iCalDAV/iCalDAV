@@ -22,12 +22,9 @@ body:
       label: Related Module
       description: Which module would this feature affect?
       options:
-        - icalendar-core
-        - webdav-core
-        - caldav-core
-        - caldav-sync
-        - ics-subscription
-        - caldav-android
+        - icaldav-core
+        - icaldav-client
+        - icaldav-sync
         - New module
         - Multiple / Unknown
     validations:

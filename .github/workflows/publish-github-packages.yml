@@ -26,11 +26,9 @@ jobs:
 
       - name: Publish to GitHub Packages
         run: |
-          ./gradlew :icalendar-core:publishMavenPublicationToGitHubPackagesRepository \
-                    :webdav-core:publishMavenPublicationToGitHubPackagesRepository \
-                    :caldav-core:publishMavenPublicationToGitHubPackagesRepository \
-                    :caldav-sync:publishMavenPublicationToGitHubPackagesRepository \
-                    :ics-subscription:publishMavenPublicationToGitHubPackagesRepository
+          ./gradlew :icaldav-core:publishMavenPublicationToGitHubPackagesRepository \
+                    :icaldav-client:publishMavenPublicationToGitHubPackagesRepository \
+                    :icaldav-sync:publishMavenPublicationToGitHubPackagesRepository
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
