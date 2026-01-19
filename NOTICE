@@ -5,12 +5,54 @@ This product includes software developed by:
 
 ---
 
+ical4j (https://www.ical4j.org/)
+Copyright by the ical4j project contributors
+Licensed under the BSD 3-Clause License
+
+---
+
 OkHttp (https://square.github.io/okhttp/)
 Copyright 2019 Square, Inc.
 Licensed under the Apache License, Version 2.0
 
 ---
 
-kotlinx.coroutines (https://github.com/Kotlin/kotlinx.coroutines)
-Copyright 2016-2021 JetBrains s.r.o.
+Okio (https://square.github.io/okio/)
+Copyright 2013 Square, Inc.
 Licensed under the Apache License, Version 2.0
+
+---
+
+Kotlin Standard Library (https://kotlinlang.org/)
+Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors
+Licensed under the Apache License, Version 2.0
+
+---
+
+kotlinx.coroutines (https://github.com/Kotlin/kotlinx.coroutines)
+Copyright 2016-2024 JetBrains s.r.o. and Kotlin Programming Language contributors
+Licensed under the Apache License, Version 2.0
+
+---
+
+SLF4J (https://www.slf4j.org/)
+Copyright 2004-2022 QOS.ch Sarl (Switzerland)
+Licensed under the MIT License
+
+---
+
+Apache Commons Codec (https://commons.apache.org/proper/commons-codec/)
+Copyright 2002-2024 The Apache Software Foundation
+Licensed under the Apache License, Version 2.0
+
+---
+
+Apache Commons Lang (https://commons.apache.org/proper/commons-lang/)
+Copyright 2001-2024 The Apache Software Foundation
+Licensed under the Apache License, Version 2.0
+
+---
+
+ThreeTen-Extra (https://www.threeten.org/threeten-extra/)
+Copyright 2007-present Stephen Colebourne & Michael Nascimento Santos
+Licensed under the BSD 3-Clause License

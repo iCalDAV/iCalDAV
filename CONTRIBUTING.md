@@ -69,13 +69,9 @@ cd iCalDAV
 
 ```
 iCalDAV/
-├── icalendar-core/     # ICS parsing, generation, RRULE
-├── webdav-core/        # WebDAV client, XML handling
-├── caldav-core/        # CalDAV client, discovery
-├── caldav-sync/        # Sync engine
-├── ics-subscription/   # ICS subscription client
-├── caldav-android/     # Android utilities
-└── sample/             # Sample application
+├── icaldav-core/       # ICS parsing, generation, RRULE
+├── icaldav-client/     # CalDAV/WebDAV client, discovery, ICS subscriptions
+└── icaldav-sync/       # Sync engine with offline support
 ```
 
 ## Code Style
@@ -237,8 +233,7 @@ Releases are managed by maintainers. We use [Semantic Versioning](https://semver
 
 ## Getting Help
 
-- **Questions**: Open a [Discussion](https://github.com/iCalDAV/iCalDAV/discussions)
-- **Bugs**: Open an [Issue](https://github.com/iCalDAV/iCalDAV/issues)
+- **Questions & Bugs**: Open an [Issue](https://github.com/iCalDAV/iCalDAV/issues)
 - **Security**: See [SECURITY.md](SECURITY.md)
 
 ## Recognition

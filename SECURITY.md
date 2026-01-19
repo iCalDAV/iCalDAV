@@ -4,6 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 2.x.x   | :white_check_mark: |
 | 1.x.x   | :white_check_mark: |
 | < 1.0   | :x:                |
 
@@ -15,9 +16,7 @@ We take the security of iCalDAV seriously. If you believe you have found a secur
 
 **Please do NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via email to: **icalendar.security@gmail.com**
-
-You should receive a response within 48 hours. If for some reason you do not, please follow up via email to ensure we received your original message.
+Instead, please use [GitHub Security Advisories](https://github.com/iCalDAV/iCalDAV/security/advisories/new) to report vulnerabilities privately.
 
 ### What to Include
 
@@ -29,14 +28,6 @@ Please include the following information in your report:
 - Step-by-step instructions to reproduce the issue
 - Proof-of-concept or exploit code (if possible)
 - Impact assessment of the vulnerability
-
-### What to Expect
-
-1. **Acknowledgment**: We will acknowledge receipt of your report within 48 hours
-2. **Assessment**: We will investigate and validate the vulnerability within 7 days
-3. **Fix Timeline**: Critical vulnerabilities will be patched within 7 days; others within 30 days
-4. **Disclosure**: We will coordinate with you on public disclosure timing
-5. **Credit**: We will credit you in the security advisory (unless you prefer anonymity)
 
 ## Security Considerations
 
@@ -105,7 +96,6 @@ Security updates are released as patch versions (e.g., 1.0.1) and announced via:
 
 - GitHub Security Advisories
 - Release notes
-- [Optional: Mailing list]
 
 We recommend enabling GitHub notifications for security advisories on this repository.
 
@@ -117,4 +107,4 @@ We thank the following individuals for responsibly disclosing security issues:
 
 ---
 
-*This security policy was last updated on December 2024.*
+*This security policy was last updated in January 2026.*
