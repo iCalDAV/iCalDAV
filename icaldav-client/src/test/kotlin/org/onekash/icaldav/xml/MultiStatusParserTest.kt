@@ -654,7 +654,104 @@ END:VCALENDAR]]></c:calendar-data>
             """.trimIndent()
 
             val multiStatus = parseSuccess(xml)
-            assertEquals("/calendars/user%40example.com/calendar/", multiStatus.responses[0].href)
+            // Now expects decoded output
+            assertEquals("/calendars/user@example.com/calendar/", multiStatus.responses[0].href)
+        }
+
+        @Test
+        fun `decodes various URL-encoded characters in hrefs`() {
+            val xml = """
+                <?xml version="1.0"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/calendars/test%40user/event%20name.ics</D:href>
+                        <D:propstat>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            val multiStatus = parseSuccess(xml)
+            assertEquals("/calendars/test@user/event name.ics", multiStatus.responses[0].href)
+        }
+
+        @Test
+        fun `preserves literal plus signs in hrefs`() {
+            val xml = """
+                <?xml version="1.0"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/calendars/user/event+name.ics</D:href>
+                        <D:propstat>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            val multiStatus = parseSuccess(xml)
+            // Literal + should remain as +, not become space
+            assertEquals("/calendars/user/event+name.ics", multiStatus.responses[0].href)
+        }
+
+        @Test
+        fun `decodes hrefs in current-user-principal`() {
+            val xml = """
+                <?xml version="1.0"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:current-user-principal>
+                                    <D:href>/principals/user%40example.com/</D:href>
+                                </D:current-user-principal>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            val multiStatus = parseSuccess(xml)
+            assertEquals("/principals/user@example.com/", multiStatus.responses[0].properties.currentUserPrincipal)
+        }
+
+        @Test
+        fun `decodes hrefs in calendar-home-set`() {
+            val xml = """
+                <?xml version="1.0"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/principals/user%40example.com/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <C:calendar-home-set>
+                                    <D:href>/calendars/user%40example.com/</D:href>
+                                </C:calendar-home-set>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            val multiStatus = parseSuccess(xml)
+            assertEquals("/calendars/user@example.com/", multiStatus.responses[0].properties.calendarHomeSet)
+        }
+
+        @Test
+        fun `idempotent decoding - already decoded hrefs unchanged`() {
+            val xml = """
+                <?xml version="1.0"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/calendars/user@example.com/calendar/</D:href>
+                        <D:propstat>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            val multiStatus = parseSuccess(xml)
+            assertEquals("/calendars/user@example.com/calendar/", multiStatus.responses[0].href)
         }
 
         @Test

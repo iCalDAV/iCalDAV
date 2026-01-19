@@ -71,7 +71,7 @@ class MultiStatusParser {
             """<(?:[a-zA-Z]+:)?href[^>]*>(.*?)</(?:[a-zA-Z]+:)?href>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
         )
-        return pattern.find(xml)?.groupValues?.get(1)?.trim()
+        return pattern.find(xml)?.groupValues?.get(1)?.trim()?.let { decodeHref(it) }
     }
 
     /**
@@ -139,7 +139,7 @@ class MultiStatusParser {
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
         )
         principalPattern.find(propContent)?.groupValues?.get(1)?.trim()?.let { href ->
-            props["current-user-principal"] = href
+            props["current-user-principal"] = decodeHref(href)
         }
 
         // Special handling for href inside calendar-home-set
@@ -148,7 +148,7 @@ class MultiStatusParser {
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
         )
         homeSetPattern.find(propContent)?.groupValues?.get(1)?.trim()?.let { href ->
-            props["calendar-home-set"] = href
+            props["calendar-home-set"] = decodeHref(href)
         }
 
         return DavProperties.from(props)
@@ -204,6 +204,19 @@ class MultiStatusParser {
             RegexOption.IGNORE_CASE
         )
         return pattern.find(xml)?.groupValues?.get(1)?.trim()
+    }
+
+    /**
+     * URL-decode an href, preserving literal + signs.
+     * URLDecoder treats + as space (query string convention), but in paths + should remain +.
+     */
+    private fun decodeHref(href: String): String {
+        return try {
+            // Preserve literal + by temporarily encoding it
+            java.net.URLDecoder.decode(href.replace("+", "%2B"), "UTF-8")
+        } catch (e: Exception) {
+            href // Return as-is if decoding fails
+        }
     }
 
     companion object {

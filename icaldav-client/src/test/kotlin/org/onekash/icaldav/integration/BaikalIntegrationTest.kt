@@ -6593,6 +6593,112 @@ class BaikalIntegrationTest {
         }
     }
 
+    // ======================== Raw iCal Preservation Tests ========================
+
+    @Test
+    @Order(266)
+    @DisplayName("266. rawIcal preserves custom X-properties on fetchEvents")
+    fun `rawIcal preserves custom properties via fetchEvents`() {
+        val uid = generateUid("rawical-fetch")
+        val startTime = Instant.now().plus(600, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        // Create event with custom X-property that parser doesn't extract
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Raw iCal Test Event
+            X-ICALDAV-TEST-PROP:test-value-12345
+            X-CUSTOM-METADATA:{"key":"value","num":42}
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val createResult = createAndTrackEvent(uid, icalData)
+        println("Created event for rawIcal test: ${createResult.href}")
+
+        // Fetch events and verify rawIcal contains the custom properties
+        val fetchResult = calDavClient.fetchEvents(defaultCalendarUrl!!)
+        assertTrue(fetchResult is DavResult.Success, "fetchEvents should succeed")
+
+        val events = (fetchResult as DavResult.Success).value
+        val testEvent = events.find { it.event.uid == uid }
+        assertNotNull(testEvent, "Should find test event")
+        assertNotNull(testEvent!!.rawIcal, "rawIcal should be populated")
+
+        // Verify custom X-properties are preserved in rawIcal
+        assertTrue(
+            testEvent.rawIcal!!.contains("X-ICALDAV-TEST-PROP:test-value-12345"),
+            "rawIcal should contain X-ICALDAV-TEST-PROP"
+        )
+        assertTrue(
+            testEvent.rawIcal!!.contains("X-CUSTOM-METADATA:"),
+            "rawIcal should contain X-CUSTOM-METADATA"
+        )
+        assertTrue(
+            testEvent.rawIcal!!.contains("BEGIN:VCALENDAR"),
+            "rawIcal should contain complete VCALENDAR"
+        )
+        assertTrue(
+            testEvent.rawIcal!!.contains("END:VCALENDAR"),
+            "rawIcal should contain END:VCALENDAR"
+        )
+
+        println("rawIcal preservation verified:")
+        println("  - X-ICALDAV-TEST-PROP preserved: true")
+        println("  - X-CUSTOM-METADATA preserved: true")
+        println("  - Complete VCALENDAR structure: true")
+    }
+
+    @Test
+    @Order(267)
+    @DisplayName("267. rawIcal preserves custom X-properties on getEvent")
+    fun `rawIcal preserves custom properties via getEvent`() {
+        val uid = generateUid("rawical-get")
+        val startTime = Instant.now().plus(601, ChronoUnit.DAYS)
+        val now = Instant.now()
+
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//iCalDAV Integration Test//EN
+            BEGIN:VEVENT
+            UID:$uid
+            DTSTAMP:${formatICalTimestamp(now)}
+            DTSTART:${formatICalTimestamp(startTime)}
+            DTEND:${formatICalTimestamp(startTime.plus(1, ChronoUnit.HOURS))}
+            SUMMARY:Raw iCal GetEvent Test
+            X-ROUNDTRIP-DATA:preserve-this-value
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val createResult = createAndTrackEvent(uid, icalData)
+        println("Created event for getEvent rawIcal test: ${createResult.href}")
+
+        // Use getEvent to fetch single event
+        val getResult = calDavClient.getEvent(createResult.href)
+        assertTrue(getResult is DavResult.Success, "getEvent should succeed")
+
+        val event = (getResult as DavResult.Success).value
+        assertNotNull(event.rawIcal, "rawIcal should be populated via getEvent")
+
+        assertTrue(
+            event.rawIcal!!.contains("X-ROUNDTRIP-DATA:preserve-this-value"),
+            "rawIcal should contain X-ROUNDTRIP-DATA"
+        )
+
+        println("getEvent rawIcal preservation verified:")
+        println("  - X-ROUNDTRIP-DATA preserved: true")
+        println("  - rawIcal length: ${event.rawIcal!!.length} chars")
+    }
+
     // ======================== Summary Test ========================
 
     @Test
