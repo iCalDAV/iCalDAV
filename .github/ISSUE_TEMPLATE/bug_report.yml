@@ -31,12 +31,9 @@ body:
       label: Affected Module
       description: Which module is affected?
       options:
-        - icalendar-core
-        - webdav-core
-        - caldav-core
-        - caldav-sync
-        - ics-subscription
-        - caldav-android
+        - icaldav-core
+        - icaldav-client
+        - icaldav-sync
         - Multiple / Unknown
     validations:
       required: true

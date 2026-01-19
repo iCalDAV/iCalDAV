@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+    iCalDAV Android - CalendarContract Mapper
+
+    This library provides mapping between iCalDAV's ICalEvent model and
+    Android's CalendarContract ContentProvider.
+
+    Consuming apps must declare these permissions in their own manifest:
+    - android.permission.READ_CALENDAR
+    - android.permission.WRITE_CALENDAR
+    -->
+</manifest>

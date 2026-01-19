@@ -174,7 +174,7 @@ export NEXTCLOUD_USER
 export NEXTCLOUD_PASS
 
 # Run tests with Gradle
-./gradlew :caldav-core:test \
+./gradlew :icaldav-client:test \
     --tests "*NextcloudIntegrationTest*" \
     --info \
     2>&1 | tee integration-test-output.log
@@ -191,8 +191,8 @@ else
 fi
 
 # Print test report location
-if [ -f "caldav-core/build/reports/tests/test/index.html" ]; then
-    log_info "Test report: caldav-core/build/reports/tests/test/index.html"
+if [ -f "icaldav-client/build/reports/tests/test/index.html" ]; then
+    log_info "Test report: icaldav-client/build/reports/tests/test/index.html"
 fi
 
 if [ "$KEEP_RUNNING" = true ]; then

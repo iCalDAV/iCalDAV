@@ -9,8 +9,8 @@ plugins {
 }
 
 allprojects {
-    group = "io.github.icaldav"
-    version = "1.2.0"
+    group = "org.onekash"
+    version = findProperty("VERSION_NAME") as String? ?: "2.2.0"
 }
 
 subprojects {
