@@ -23,14 +23,17 @@ A Kotlin CalDAV client with offline sync and conflict resolution. Sync calendars
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("org.onekash:icaldav-client:2.0.0")
+    implementation("org.onekash:icaldav-client:2.2.0")
 
     // Optional: Sync engine with offline support
-    implementation("org.onekash:icaldav-sync:2.0.0")
+    implementation("org.onekash:icaldav-sync:2.2.0")
+
+    // Optional: Android CalendarContract mapper (API 21+)
+    implementation("org.onekash:icaldav-android:2.2.0")
 }
 ```
 
-**Requirements:** JVM 17+, Kotlin 1.9+
+**Requirements:** JVM 17+, Kotlin 1.9+. Android module requires API 21+.
 
 ## Quick Start
 
@@ -102,6 +105,7 @@ when (val result = client.fetchEvents(calendarUrl, start, end)) {
 | `icaldav-core` | Parse and generate iCalendar (RFC 5545) |
 | `icaldav-client` | CalDAV/WebDAV client with discovery and CRUD |
 | `icaldav-sync` | Sync engine with offline support and conflict resolution |
+| `icaldav-android` | Android CalendarContract mapper (API 21+) |
 
 ## Tested Providers
 

@@ -19,3 +19,4 @@ rootProject.name = "icaldav"
 include(":icaldav-core")
 include(":icaldav-client")
 include(":icaldav-sync")
+include(":icaldav-android")
