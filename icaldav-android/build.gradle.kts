@@ -71,6 +71,9 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.5.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("com.google.truth:truth:1.1.5")
+
+    // icaldav-client for integration tests against real CalDAV servers
+    androidTestImplementation(project(":icaldav-client"))
 }
 
 tasks.withType<Test> {
