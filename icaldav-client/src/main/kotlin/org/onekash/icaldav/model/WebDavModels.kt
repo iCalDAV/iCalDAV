@@ -23,11 +23,42 @@ data class DavResponse(
 
 /**
  * Collection of DAV properties from a response.
+ *
+ * @property properties Map of property names to their string values
+ * @property propertyStatus Map of property names to their individual status (for per-property error handling)
  */
 data class DavProperties(
-    val properties: Map<String, String?> = emptyMap()
+    val properties: Map<String, String?> = emptyMap(),
+    val propertyStatus: Map<String, PropertyStatus> = emptyMap()
 ) {
     fun get(name: String): String? = properties[name]
+
+    /**
+     * Get the status for a specific property.
+     * @return PropertyStatus if available, null if status wasn't tracked
+     */
+    fun getStatus(name: String): PropertyStatus? = propertyStatus[name]
+
+    /**
+     * Check if a property was successfully retrieved (200 status).
+     * Returns true if no status tracking is available (backward compat).
+     */
+    fun hasProperty(name: String): Boolean {
+        val status = propertyStatus[name]
+        return status == null || status.isSuccess
+    }
+
+    /**
+     * Properties that failed to be retrieved (non-2xx status).
+     */
+    val failedProperties: Map<String, PropertyStatus>
+        get() = propertyStatus.filter { !it.value.isSuccess }
+
+    /**
+     * Properties that were not found (404 status).
+     */
+    val notFoundProperties: Set<String>
+        get() = propertyStatus.filter { it.value.isNotFound }.keys
 
     // Common WebDAV properties
     val displayName: String? get() = properties["displayname"]
@@ -52,6 +83,11 @@ data class DavProperties(
 
     companion object {
         fun from(map: Map<String, String?>): DavProperties = DavProperties(map)
+
+        fun from(
+            map: Map<String, String?>,
+            status: Map<String, PropertyStatus>
+        ): DavProperties = DavProperties(map, status)
 
         val EMPTY = DavProperties()
     }
@@ -88,6 +124,45 @@ enum class DavDepth(val value: String) {
     ZERO("0"),
     ONE("1"),
     INFINITY("infinity")
+}
+
+/**
+ * Status of an individual property in a WebDAV propstat response.
+ *
+ * WebDAV servers return per-property status in propstat elements, allowing
+ * different properties to have different success/failure states.
+ *
+ * @property statusCode HTTP status code for this property (e.g., 200, 404, 403)
+ * @property statusText HTTP status text (e.g., "OK", "Not Found", "Forbidden")
+ */
+data class PropertyStatus(
+    val statusCode: Int,
+    val statusText: String
+) {
+    /** Whether the property was successfully retrieved (2xx status) */
+    val isSuccess: Boolean get() = statusCode in 200..299
+
+    /** Whether the property was not found (404) */
+    val isNotFound: Boolean get() = statusCode == 404
+
+    /** Whether the property access was forbidden (403) */
+    val isForbidden: Boolean get() = statusCode == 403
+
+    companion object {
+        val OK = PropertyStatus(200, "OK")
+        val NOT_FOUND = PropertyStatus(404, "Not Found")
+        val FORBIDDEN = PropertyStatus(403, "Forbidden")
+
+        /**
+         * Parse status from HTTP status line (e.g., "HTTP/1.1 200 OK").
+         */
+        fun fromStatusLine(statusLine: String): PropertyStatus {
+            val parts = statusLine.trim().split(Regex("\\s+"), limit = 3)
+            val code = parts.getOrNull(1)?.toIntOrNull() ?: 0
+            val text = parts.getOrNull(2) ?: "Unknown"
+            return PropertyStatus(code, text)
+        }
+    }
 }
 
 /**

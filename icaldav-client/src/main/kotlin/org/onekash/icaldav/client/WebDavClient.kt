@@ -140,22 +140,27 @@ class WebDavClient(
      * @param url Target URL
      * @param body XML request body
      * @param depth Depth header (0, 1, or infinity)
+     * @param preferMinimal If true, adds Prefer: return=minimal header to reduce response size
      * @return Parsed multistatus response
      */
     fun propfind(
         url: String,
         body: String,
-        depth: DavDepth = DavDepth.ZERO
+        depth: DavDepth = DavDepth.ZERO,
+        preferMinimal: Boolean = false
     ): DavResult<MultiStatus> {
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .method("PROPFIND", body.toRequestBody(xmlMediaType))
             .header("Depth", depth.value)
             .header("Content-Type", "application/xml; charset=utf-8")
             .applyAuth()
-            .build()
 
-        return executeAndParse(request)
+        if (preferMinimal) {
+            requestBuilder.header("Prefer", "return=minimal")
+        }
+
+        return executeAndParse(requestBuilder.build())
     }
 
     /**
@@ -164,22 +169,62 @@ class WebDavClient(
      * @param url Target URL
      * @param body XML request body
      * @param depth Depth header
+     * @param preferMinimal If true, adds Prefer: return=minimal header to reduce response size
      * @return Parsed multistatus response
      */
     fun report(
         url: String,
         body: String,
-        depth: DavDepth = DavDepth.ONE
+        depth: DavDepth = DavDepth.ONE,
+        preferMinimal: Boolean = false
     ): DavResult<MultiStatus> {
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .method("REPORT", body.toRequestBody(xmlMediaType))
             .header("Depth", depth.value)
             .header("Content-Type", "application/xml; charset=utf-8")
             .applyAuth()
+
+        if (preferMinimal) {
+            requestBuilder.header("Prefer", "return=minimal")
+        }
+
+        return executeAndParse(requestBuilder.build())
+    }
+
+    /**
+     * Perform OPTIONS request to discover server capabilities.
+     *
+     * Returns the DAV compliance classes and allowed methods for the resource.
+     * Use this to determine which features are supported before using them.
+     *
+     * @param url Target URL (usually server root or calendar collection)
+     * @return Server capabilities parsed from response headers
+     */
+    fun options(url: String): DavResult<ServerCapabilities> {
+        val request = Request.Builder()
+            .url(url)
+            .method("OPTIONS", null)
+            .applyAuth()
             .build()
 
-        return executeAndParse(request)
+        return executeWithRetry(request) { response ->
+            when {
+                response.isSuccessful -> {
+                    val davHeader = response.header("DAV")
+                    val allowHeader = response.header("Allow")
+                    DavResult.success(ServerCapabilities.fromHeaders(davHeader, allowHeader))
+                }
+                response.code == 405 -> {
+                    // Method Not Allowed - server doesn't support OPTIONS
+                    // Return UNKNOWN instead of error for graceful degradation
+                    DavResult.success(ServerCapabilities.UNKNOWN)
+                }
+                else -> {
+                    DavResult.httpError(response.code, response.message)
+                }
+            }
+        }
     }
 
     /**

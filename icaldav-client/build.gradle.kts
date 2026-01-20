@@ -27,6 +27,11 @@ dependencies {
     // Coroutines for async operations
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
+    // DNS-SRV lookup support for CalDAV service discovery (RFC 6764)
+    // NOTE: Requires Android API 26+ (Android 8.0 Oreo) due to java.time usage
+    // For lower API levels, enable core library desugaring in your Android app
+    implementation("dnsjava:dnsjava:3.5.2")
+
     // Testing
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation(kotlin("test"))

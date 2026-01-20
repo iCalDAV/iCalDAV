@@ -37,6 +37,78 @@ class CalDavClient(
 ) {
     private val discovery = CalDavDiscovery(webDavClient)
 
+    // Cache for server capabilities (per URL)
+    private val capabilitiesCache = mutableMapOf<String, ServerCapabilities>()
+
+    /**
+     * Get server capabilities (discovered via OPTIONS request).
+     *
+     * Results are cached for 1 hour to avoid repeated OPTIONS requests.
+     * Use forceRefresh=true to bypass the cache.
+     *
+     * @param serverUrl Server URL to query (usually the server root)
+     * @param forceRefresh If true, bypass cache and query server
+     * @return Server capabilities or UNKNOWN if discovery fails
+     *
+     * @see ServerCapabilities
+     */
+    fun getCapabilities(serverUrl: String, forceRefresh: Boolean = false): DavResult<ServerCapabilities> {
+        val cached = capabilitiesCache[serverUrl]
+        val now = System.currentTimeMillis()
+
+        // Return cached if valid and not forcing refresh
+        if (!forceRefresh && cached != null &&
+            (now - cached.discoveredAt) < CAPABILITIES_CACHE_TTL_MS) {
+            return DavResult.success(cached)
+        }
+
+        return webDavClient.options(serverUrl).also { result ->
+            if (result is DavResult.Success) {
+                capabilitiesCache[serverUrl] = result.value
+            }
+        }
+    }
+
+    /**
+     * Clear the capabilities cache.
+     *
+     * Call this if you need to re-discover capabilities after a server update.
+     */
+    fun clearCapabilitiesCache() {
+        capabilitiesCache.clear()
+    }
+
+    /**
+     * Perform sync-collection if supported by the server.
+     *
+     * This is a convenience method that checks capabilities before calling syncCollection().
+     * If sync-collection is not supported, returns null (caller should use ctag-based sync).
+     *
+     * @param calendarUrl Calendar collection URL
+     * @param syncToken Previous sync token (empty for full sync)
+     * @param serverUrl Server URL for capability check (defaults to calendar URL root)
+     * @return Sync result, or null if sync-collection not supported
+     */
+    fun syncCollectionIfSupported(
+        calendarUrl: String,
+        syncToken: String = "",
+        serverUrl: String = extractServerRoot(calendarUrl)
+    ): DavResult<SyncResult?> {
+        val caps = getCapabilities(serverUrl)
+        if (caps is DavResult.Success && !caps.value.supportsSyncCollection) {
+            return DavResult.success(null) // Not supported
+        }
+        return syncCollection(calendarUrl, syncToken).map { it }
+    }
+
+    /**
+     * Extract server root URL from a full URL.
+     */
+    private fun extractServerRoot(url: String): String {
+        val match = Regex("""(https?://[^/]+)""").find(url)
+        return match?.groupValues?.get(1) ?: url
+    }
+
     /**
      * Discover and connect to a CalDAV account.
      *
@@ -405,6 +477,9 @@ class CalDavClient(
     }
 
     companion object {
+        // Cache TTL: 1 hour (capabilities rarely change)
+        private const val CAPABILITIES_CACHE_TTL_MS = 3600_000L
+
         /**
          * Create CalDavClient with Basic authentication.
          *

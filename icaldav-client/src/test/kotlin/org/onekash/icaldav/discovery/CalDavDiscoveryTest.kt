@@ -604,4 +604,325 @@ class CalDavDiscoveryTest {
             assertTrue(result.value.startsWith("/") || result.value.startsWith("http"))
         }
     }
+
+    @Nested
+    @DisplayName("Well-known Fallback")
+    inner class WellKnownFallbackTests {
+
+        private fun createDiscoveryWithFallback(enabled: Boolean = true): CalDavDiscovery {
+            return CalDavDiscovery(
+                client = webDavClient,
+                enableWellKnownFallback = enabled
+            )
+        }
+
+        @Test
+        fun `falls back to well-known when direct fails with 404`() {
+            val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
+
+            // First request (direct) fails with 404
+            server.enqueue(MockResponse().setResponseCode(404))
+
+            // Well-known request succeeds with principal
+            val principalResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/.well-known/caldav</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:current-user-principal>
+                                    <D:href>/principals/testuser/</D:href>
+                                </D:current-user-principal>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(principalResponse))
+
+            // Calendar home response
+            val homeResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/principals/testuser/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <C:calendar-home-set>
+                                    <D:href>/calendars/testuser/</D:href>
+                                </C:calendar-home-set>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(homeResponse))
+
+            // Calendar listing response
+            val calendarResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/calendars/testuser/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:resourcetype><D:collection/></D:resourcetype>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(calendarResponse))
+
+            val result = discoveryWithFallback.discoverAccount(serverUrl("/"))
+
+            assertIs<DavResult.Success<*>>(result)
+            val account = (result as DavResult.Success).value
+            assertTrue(account.principalUrl.contains("/principals/testuser/"))
+        }
+
+        @Test
+        fun `skips well-known when disabled`() {
+            val discoveryWithoutFallback = createDiscoveryWithFallback(enabled = false)
+
+            // Direct request fails
+            server.enqueue(MockResponse().setResponseCode(404))
+
+            val result = discoveryWithoutFallback.discoverAccount(serverUrl("/"))
+
+            // Should return error without trying well-known
+            assertTrue(result !is DavResult.Success)
+
+            // Only one request should have been made
+            assertEquals(1, server.requestCount)
+        }
+
+        @Test
+        fun `returns original error when both fail`() {
+            val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
+
+            // Direct request fails with 401
+            server.enqueue(MockResponse().setResponseCode(401).setHeader("WWW-Authenticate", "Basic"))
+
+            // Well-known also fails with 401
+            server.enqueue(MockResponse().setResponseCode(401).setHeader("WWW-Authenticate", "Basic"))
+
+            val result = discoveryWithFallback.discoverAccount(serverUrl("/"))
+
+            // Should return error
+            assertTrue(result !is DavResult.Success)
+            assertIs<DavResult.HttpError>(result)
+            // Original error should be returned (401)
+            assertEquals(401, (result as DavResult.HttpError).code)
+        }
+
+        @Test
+        fun `prevents loop when well-known equals original URL`() {
+            val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
+
+            // Request to /.well-known/caldav fails
+            server.enqueue(MockResponse().setResponseCode(404))
+
+            // Should not make a second request to the same URL
+            val result = discoveryWithFallback.discoverAccount(serverUrl("/.well-known/caldav"))
+
+            assertTrue(result !is DavResult.Success)
+            // Only one request should have been made
+            assertEquals(1, server.requestCount)
+        }
+
+        @Test
+        fun `strips path from URL before adding well-known`() {
+            val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
+
+            // Direct request to /some/path/ fails
+            server.enqueue(MockResponse().setResponseCode(404))
+
+            // Well-known request to /.well-known/caldav succeeds
+            val principalResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/.well-known/caldav</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:current-user-principal>
+                                    <D:href>/principals/testuser/</D:href>
+                                </D:current-user-principal>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(principalResponse))
+
+            // Home and calendar responses
+            val homeResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/principals/testuser/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <C:calendar-home-set><D:href>/calendars/</D:href></C:calendar-home-set>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(homeResponse))
+
+            val calResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:"><D:response><D:href>/calendars/</D:href>
+                    <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>
+                    <D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+                </D:response></D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(calResponse))
+
+            val result = discoveryWithFallback.discoverAccount(serverUrl("/some/path/"))
+
+            // Should succeed via well-known
+            assertIs<DavResult.Success<*>>(result)
+
+            // Verify second request went to /.well-known/caldav, not /some/path/.well-known/caldav
+            val secondRequest = server.takeRequest()
+            server.takeRequest() // First request
+            val requestPath = secondRequest.path
+            assertTrue(requestPath?.contains("/.well-known/caldav") == true || requestPath?.contains("/some/path/") == true)
+        }
+
+        @Test
+        fun `direct URL discovery still works when well-known enabled`() {
+            val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
+
+            // Direct request succeeds
+            val principalResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:current-user-principal><D:href>/principals/testuser/</D:href></D:current-user-principal>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(principalResponse))
+
+            val homeResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/principals/testuser/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <C:calendar-home-set><D:href>/calendars/</D:href></C:calendar-home-set>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(homeResponse))
+
+            val calResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:"><D:response><D:href>/calendars/</D:href>
+                    <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>
+                    <D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+                </D:response></D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(calResponse))
+
+            val result = discoveryWithFallback.discoverAccount(serverUrl("/"))
+
+            // Should succeed without needing well-known
+            assertIs<DavResult.Success<*>>(result)
+            assertEquals(3, server.requestCount) // Only 3 requests, no well-known
+        }
+    }
+
+    @Nested
+    @DisplayName("Regression Tests")
+    inner class RegressionTests {
+
+        @Test
+        fun `existing discovery flow still works`() {
+            // Standard discovery flow (no well-known needed)
+            val principalResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:current-user-principal><D:href>/principals/users/testuser/</D:href></D:current-user-principal>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            val homeResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/principals/users/testuser/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <C:calendar-home-set><D:href>/calendars/testuser/</D:href></C:calendar-home-set>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            val calendarResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/calendars/testuser/</D:href>
+                        <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>
+                        <D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+                    </D:response>
+                    <D:response>
+                        <D:href>/calendars/testuser/calendar/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:displayname>Calendar</D:displayname>
+                                <D:resourcetype><D:collection/><C:calendar/></D:resourcetype>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            server.enqueue(MockResponse().setResponseCode(207).setBody(principalResponse))
+            server.enqueue(MockResponse().setResponseCode(207).setBody(homeResponse))
+            server.enqueue(MockResponse().setResponseCode(207).setBody(calendarResponse))
+
+            // Use default discovery (which now has well-known enabled by default)
+            val result = discovery.discoverAccount(serverUrl("/"))
+
+            assertIs<DavResult.Success<*>>(result)
+            val account = (result as DavResult.Success).value
+            assertNotNull(account)
+            assertTrue(account.calendars.isNotEmpty())
+            assertEquals("Calendar", account.calendars.first().displayName)
+        }
+    }
 }
