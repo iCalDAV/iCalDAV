@@ -116,6 +116,21 @@ object CalendarMapper {
      * @return CalendarInfo containing the calendar's metadata
      */
     fun fromCursor(cursor: Cursor): CalendarInfo {
+        // Parse allowed reminders (comma-separated list)
+        val allowedRemindersStr = cursor.getStringOrNull(Calendars.ALLOWED_REMINDERS)
+        val allowedReminders = allowedRemindersStr?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+
+        // Parse allowed availability (comma-separated list)
+        val allowedAvailabilityStr = cursor.getStringOrNull(Calendars.ALLOWED_AVAILABILITY)
+        val allowedAvailability = allowedAvailabilityStr?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+
+        // Parse allowed attendee types (comma-separated list)
+        val allowedAttendeeTypesStr = cursor.getStringOrNull(Calendars.ALLOWED_ATTENDEE_TYPES)
+        val allowedAttendeeTypes = allowedAttendeeTypesStr?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+
         return CalendarInfo(
             id = cursor.getLongOrDefault(Calendars._ID, -1),
             accountName = cursor.getStringOrDefault(Calendars.ACCOUNT_NAME, ""),
@@ -130,7 +145,12 @@ object CalendarMapper {
             accessLevel = cursor.getIntOrDefault(
                 Calendars.CALENDAR_ACCESS_LEVEL,
                 Calendars.CAL_ACCESS_OWNER
-            )
+            ),
+            isPrimary = cursor.getIntOrDefault(Calendars.IS_PRIMARY, 0) == 1,
+            maxReminders = cursor.getIntOrDefault(Calendars.MAX_REMINDERS, 5),
+            allowedReminders = allowedReminders,
+            allowedAvailability = allowedAvailability,
+            allowedAttendeeTypes = allowedAttendeeTypes
         )
     }
 }
@@ -170,5 +190,29 @@ data class CalendarInfo(
     val visible: Boolean,
 
     /** Access level (CAL_ACCESS_*) */
-    val accessLevel: Int
+    val accessLevel: Int,
+
+    /** Whether this is the primary calendar for the account */
+    val isPrimary: Boolean = false,
+
+    /** Maximum number of reminders allowed per event */
+    val maxReminders: Int = 5,
+
+    /**
+     * Allowed reminder methods (e.g., METHOD_ALERT, METHOD_EMAIL).
+     * Null means all methods are allowed.
+     */
+    val allowedReminders: List<Int>? = null,
+
+    /**
+     * Allowed availability values (e.g., AVAILABILITY_BUSY, AVAILABILITY_FREE).
+     * Null means all values are allowed.
+     */
+    val allowedAvailability: List<Int>? = null,
+
+    /**
+     * Allowed attendee types (e.g., TYPE_REQUIRED, TYPE_OPTIONAL).
+     * Null means all types are allowed.
+     */
+    val allowedAttendeeTypes: List<Int>? = null
 )

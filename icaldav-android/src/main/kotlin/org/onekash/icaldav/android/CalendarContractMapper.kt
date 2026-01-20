@@ -108,6 +108,42 @@ object CalendarContractMapper {
             event.lastModified?.let {
                 put(Events.SYNC_DATA5, it.timestamp.toString())
             }
+
+            // ACCESS_LEVEL from CLASS property (RFC 5545)
+            put(Events.ACCESS_LEVEL, mapAccessLevel(event.rawProperties["CLASS"]))
+        }
+    }
+
+    /**
+     * Map iCal CLASS property value to CalendarContract ACCESS_LEVEL.
+     *
+     * | iCal CLASS    | ACCESS_LEVEL          |
+     * |---------------|------------------------|
+     * | PUBLIC        | ACCESS_PUBLIC (200)    |
+     * | PRIVATE       | ACCESS_PRIVATE (100)   |
+     * | CONFIDENTIAL  | ACCESS_CONFIDENTIAL (300) |
+     * | null/other    | ACCESS_DEFAULT (0)     |
+     */
+    internal fun mapAccessLevel(classValue: String?): Int {
+        return when (classValue?.uppercase()) {
+            "PUBLIC" -> Events.ACCESS_PUBLIC
+            "PRIVATE" -> Events.ACCESS_PRIVATE
+            "CONFIDENTIAL" -> Events.ACCESS_CONFIDENTIAL
+            else -> Events.ACCESS_DEFAULT
+        }
+    }
+
+    /**
+     * Map CalendarContract ACCESS_LEVEL back to iCal CLASS property value.
+     *
+     * @return CLASS value string, or null for ACCESS_DEFAULT (no CLASS property)
+     */
+    internal fun mapClassificationString(accessLevel: Int): String? {
+        return when (accessLevel) {
+            Events.ACCESS_PUBLIC -> "PUBLIC"
+            Events.ACCESS_PRIVATE -> "PRIVATE"
+            Events.ACCESS_CONFIDENTIAL -> "CONFIDENTIAL"
+            else -> null // ACCESS_DEFAULT means no CLASS property
         }
     }
 
@@ -328,6 +364,13 @@ object CalendarContractMapper {
         // Parse color
         val color = cursor.getStringOrNull(Events.SYNC_DATA4)
 
+        // Parse ACCESS_LEVEL and convert to CLASS property for round-trip
+        val accessLevel = cursor.getIntOrDefault(Events.ACCESS_LEVEL, Events.ACCESS_DEFAULT)
+        val classValue = mapClassificationString(accessLevel)
+        val rawProperties = buildMap {
+            classValue?.let { put("CLASS", it) }
+        }
+
         return ICalEvent(
             uid = syncId,
             importId = ICalEvent.generateImportId(syncId, recurrenceId),
@@ -353,7 +396,7 @@ object CalendarContractMapper {
             created = null,
             transparency = transparency,
             url = cursor.getStringOrNull(Events.CUSTOM_APP_URI),
-            rawProperties = emptyMap()
+            rawProperties = rawProperties
         )
     }
 }
