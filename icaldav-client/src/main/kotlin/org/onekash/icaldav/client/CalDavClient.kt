@@ -15,6 +15,7 @@ import org.onekash.icaldav.xml.RequestBuilder
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * High-level CalDAV client for calendar operations.
@@ -37,14 +38,16 @@ class CalDavClient(
 ) {
     private val discovery = CalDavDiscovery(webDavClient)
 
-    // Cache for server capabilities (per URL)
-    private val capabilitiesCache = mutableMapOf<String, ServerCapabilities>()
+    // Thread-safe cache for server capabilities (per URL) with size limit
+    private val capabilitiesCache = ConcurrentHashMap<String, ServerCapabilities>()
 
     /**
      * Get server capabilities (discovered via OPTIONS request).
      *
      * Results are cached for 1 hour to avoid repeated OPTIONS requests.
      * Use forceRefresh=true to bypass the cache.
+     *
+     * Thread-safe: Can be called from multiple threads concurrently.
      *
      * @param serverUrl Server URL to query (usually the server root)
      * @param forceRefresh If true, bypass cache and query server
@@ -64,8 +67,37 @@ class CalDavClient(
 
         return webDavClient.options(serverUrl).also { result ->
             if (result is DavResult.Success) {
+                // Enforce cache size limit with simple eviction of oldest entries
+                if (capabilitiesCache.size >= MAX_CACHE_SIZE) {
+                    evictOldestCacheEntries()
+                }
                 capabilitiesCache[serverUrl] = result.value
             }
+        }
+    }
+
+    /**
+     * Evict oldest cache entries when cache is full.
+     * Removes entries that are expired or the oldest 25% if none expired.
+     */
+    private fun evictOldestCacheEntries() {
+        val now = System.currentTimeMillis()
+
+        // First, remove expired entries
+        val expiredKeys = capabilitiesCache.entries
+            .filter { (now - it.value.discoveredAt) >= CAPABILITIES_CACHE_TTL_MS }
+            .map { it.key }
+
+        expiredKeys.forEach { capabilitiesCache.remove(it) }
+
+        // If still over limit, remove oldest 25%
+        if (capabilitiesCache.size >= MAX_CACHE_SIZE) {
+            val entriesToRemove = capabilitiesCache.entries
+                .sortedBy { it.value.discoveredAt }
+                .take(MAX_CACHE_SIZE / 4)
+                .map { it.key }
+
+            entriesToRemove.forEach { capabilitiesCache.remove(it) }
         }
     }
 
@@ -479,6 +511,9 @@ class CalDavClient(
     companion object {
         // Cache TTL: 1 hour (capabilities rarely change)
         private const val CAPABILITIES_CACHE_TTL_MS = 3600_000L
+
+        // Max cache entries (prevents unbounded memory growth)
+        private const val MAX_CACHE_SIZE = 100
 
         /**
          * Create CalDavClient with Basic authentication.
