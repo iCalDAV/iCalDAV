@@ -845,11 +845,29 @@ class CalDavDiscoveryTest {
             """.trimIndent()
             server.enqueue(MockResponse().setResponseCode(207).setBody(calResponse))
 
+            // Step 4: Scheduling URL discovery (optional, added for RFC 6638 support)
+            val schedulingResponse = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:response>
+                        <D:href>/principals/testuser/</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <C:schedule-inbox-URL><D:href>/inbox/</D:href></C:schedule-inbox-URL>
+                                <C:schedule-outbox-URL><D:href>/outbox/</D:href></C:schedule-outbox-URL>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+            server.enqueue(MockResponse().setResponseCode(207).setBody(schedulingResponse))
+
             val result = discoveryWithFallback.discoverAccount(serverUrl("/"))
 
             // Should succeed without needing well-known
             assertIs<DavResult.Success<*>>(result)
-            assertEquals(3, server.requestCount) // Only 3 requests, no well-known
+            assertEquals(4, server.requestCount) // 4 requests: principal, home, calendars, scheduling URLs
         }
     }
 

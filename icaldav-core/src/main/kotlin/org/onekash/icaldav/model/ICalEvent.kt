@@ -233,22 +233,39 @@ enum class Transparency {
 
 /**
  * Meeting organizer from ORGANIZER property.
+ * Extended with RFC 6638 scheduling parameters.
  */
 data class Organizer(
     val email: String,
-    val name: String?,
-    val sentBy: String?
+    val name: String?,       // CN parameter
+    val sentBy: String?,     // SENT-BY parameter
+    // RFC 6638 scheduling parameters
+    val scheduleAgent: ScheduleAgent? = null,
+    val scheduleStatus: List<ScheduleStatus>? = null,
+    val scheduleForceSend: ScheduleForceSend? = null
 )
 
 /**
  * Meeting attendee from ATTENDEE property.
+ * Extended with RFC 5545 and RFC 6638 parameters for full scheduling support.
  */
 data class Attendee(
     val email: String,
-    val name: String?,
-    val partStat: PartStat,
-    val role: AttendeeRole,
-    val rsvp: Boolean
+    val name: String?,           // CN parameter
+    val partStat: PartStat,      // PARTSTAT - non-nullable for backward compat
+    val role: AttendeeRole,      // ROLE - enum type for backward compat
+    val rsvp: Boolean,           // RSVP - non-nullable for backward compat
+    // RFC 5545 parameters
+    val cutype: CUType = CUType.INDIVIDUAL,          // CUTYPE - calendar user type
+    val dir: String? = null,                          // DIR - LDAP directory URI
+    val member: String? = null,                       // MEMBER - group membership
+    val delegatedTo: List<String> = emptyList(),      // DELEGATED-TO - delegation targets
+    val delegatedFrom: List<String> = emptyList(),    // DELEGATED-FROM - delegation sources
+    // RFC 6638 scheduling parameters
+    val sentBy: String? = null,                       // SENT-BY - delegating user
+    val scheduleAgent: ScheduleAgent? = null,         // SCHEDULE-AGENT - server/client/none
+    val scheduleStatus: List<ScheduleStatus>? = null, // SCHEDULE-STATUS - delivery status
+    val scheduleForceSend: ScheduleForceSend? = null  // SCHEDULE-FORCE-SEND - force delivery
 )
 
 /**
@@ -294,6 +311,32 @@ enum class AttendeeRole {
                 "OPT_PARTICIPANT" -> OPT_PARTICIPANT
                 "NON_PARTICIPANT" -> NON_PARTICIPANT
                 else -> REQ_PARTICIPANT
+            }
+        }
+    }
+}
+
+/**
+ * Calendar User Type per RFC 5545.
+ * Identifies the type of calendar user specified by an attendee.
+ */
+enum class CUType {
+    INDIVIDUAL,   // An individual (default)
+    GROUP,        // A group of individuals
+    RESOURCE,     // A physical resource (projector, etc.)
+    ROOM,         // A room
+    UNKNOWN;      // Unknown type
+
+    fun toICalString(): String = name
+
+    companion object {
+        fun fromString(value: String?): CUType {
+            return when (value?.uppercase()) {
+                "GROUP" -> GROUP
+                "RESOURCE" -> RESOURCE
+                "ROOM" -> ROOM
+                "UNKNOWN" -> UNKNOWN
+                else -> INDIVIDUAL
             }
         }
     }

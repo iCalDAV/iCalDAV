@@ -106,7 +106,10 @@ data class CalDavAccount(
     val calendarHomeUrl: String,
 
     /** List of discovered calendars */
-    val calendars: List<Calendar>
+    val calendars: List<Calendar>,
+
+    /** Scheduling URLs (RFC 6638) - null if scheduling not supported */
+    val schedulingUrls: SchedulingUrls? = null
 ) {
     /**
      * Find a calendar by its display name.

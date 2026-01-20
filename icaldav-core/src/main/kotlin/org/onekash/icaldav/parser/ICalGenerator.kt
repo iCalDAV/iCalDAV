@@ -26,6 +26,7 @@ class ICalGenerator(
     private val includeAppleExtensions: Boolean = true
 ) {
     private val vtimezoneGenerator = VTimezoneGenerator()
+
     /**
      * Generate iCal string for a single event.
      *
@@ -35,10 +36,36 @@ class ICalGenerator(
      * @param includeVTimezone Include VTIMEZONE components for referenced timezones
      *                         (enabled by default for better interoperability)
      * @return Complete VCALENDAR string
+     * @deprecated Use generate(event, method, preserveDtstamp, includeVTimezone) for scheduling
      */
+    @Deprecated(
+        "Use generate(event, method, preserveDtstamp, includeVTimezone) instead",
+        ReplaceWith("generate(event, if (includeMethod) ITipMethod.PUBLISH else null, false, includeVTimezone)")
+    )
     fun generate(
         event: ICalEvent,
         includeMethod: Boolean = false,
+        includeVTimezone: Boolean = true
+    ): String = generate(
+        event = event,
+        method = if (includeMethod) ITipMethod.PUBLISH else null,
+        preserveDtstamp = false,
+        includeVTimezone = includeVTimezone
+    )
+
+    /**
+     * Generate iCal string for a single event with iTIP method support.
+     *
+     * @param event The event to generate
+     * @param method iTIP method (null = no METHOD line, for simple calendar storage)
+     * @param preserveDtstamp If true, use event's DTSTAMP; if false, use current time
+     * @param includeVTimezone Include VTIMEZONE components for referenced timezones
+     * @return Complete VCALENDAR string
+     */
+    fun generate(
+        event: ICalEvent,
+        method: ITipMethod? = null,
+        preserveDtstamp: Boolean = false,
         includeVTimezone: Boolean = true
     ): String {
         return buildString {
@@ -47,9 +74,7 @@ class ICalGenerator(
             appendLine("VERSION:2.0")
             appendLine("PRODID:$prodId")
             appendLine("CALSCALE:GREGORIAN")
-            if (includeMethod) {
-                appendLine("METHOD:PUBLISH")
-            }
+            method?.let { appendLine("METHOD:${it.value}") }
 
             // VTIMEZONE components (before VEVENT per RFC 5545)
             if (includeVTimezone) {
@@ -60,7 +85,7 @@ class ICalGenerator(
             }
 
             // VEVENT
-            appendVEvent(event)
+            appendVEvent(event, preserveDtstamp)
 
             appendLine("END:VCALENDAR")
         }
@@ -98,19 +123,25 @@ class ICalGenerator(
             }
 
             events.forEach { event ->
-                appendVEvent(event)
+                appendVEvent(event, preserveDtstamp = false)
             }
 
             appendLine("END:VCALENDAR")
         }
     }
 
-    private fun StringBuilder.appendVEvent(event: ICalEvent) {
+    private fun StringBuilder.appendVEvent(event: ICalEvent, preserveDtstamp: Boolean = false) {
         appendLine("BEGIN:VEVENT")
 
         // Required properties
         appendLine("UID:${event.uid}")
-        appendLine("DTSTAMP:${formatDtStamp()}")
+
+        // DTSTAMP handling: preserve for iTIP messages, regenerate otherwise
+        if (preserveDtstamp && event.dtstamp != null) {
+            appendLine("DTSTAMP:${event.dtstamp.toICalString()}")
+        } else {
+            appendLine("DTSTAMP:${formatDtStamp()}")
+        }
 
         // DTSTART with timezone
         appendDateTimeProperty("DTSTART", event.dtStart)
@@ -202,22 +233,12 @@ class ICalGenerator(
 
         // Organizer (for scheduling)
         event.organizer?.let { org ->
-            val params = buildString {
-                org.name?.let { append(";CN=${escapeParamValue(it)}") }
-                org.sentBy?.let { append(";SENT-BY=\"$it\"") }
-            }
-            appendLine("ORGANIZER${params}:mailto:${org.email}")
+            appendLine(formatOrganizer(org))
         }
 
         // Attendees (for scheduling)
         event.attendees.forEach { att ->
-            val params = buildString {
-                att.name?.let { append(";CN=${escapeParamValue(it)}") }
-                append(";PARTSTAT=${att.partStat.toICalString()}")
-                append(";ROLE=${att.role.toICalString()}")
-                if (att.rsvp) append(";RSVP=TRUE")
-            }
-            appendLine("ATTENDEE${params}:mailto:${att.email}")
+            appendLine(formatAttendee(att))
         }
 
         // VALARMs
@@ -423,6 +444,66 @@ class ICalGenerator(
         }
     }
 
+    /**
+     * Format ORGANIZER property with RFC 6638 scheduling parameters.
+     */
+    private fun formatOrganizer(organizer: Organizer): String {
+        val params = mutableListOf<String>()
+
+        organizer.name?.let { params.add("CN=${escapeParamValue(it)}") }
+        organizer.sentBy?.let { params.add("SENT-BY=\"mailto:$it\"") }
+
+        // RFC 6638 scheduling parameters
+        organizer.scheduleAgent?.let { params.add("SCHEDULE-AGENT=${it.value}") }
+        organizer.scheduleForceSend?.let { params.add("SCHEDULE-FORCE-SEND=${it.value}") }
+        // Note: SCHEDULE-STATUS is server-generated, typically not output on requests
+
+        val paramStr = if (params.isNotEmpty()) ";${params.joinToString(";")}" else ""
+        return "ORGANIZER$paramStr:mailto:${organizer.email}"
+    }
+
+    /**
+     * Format ATTENDEE property with all RFC 5545 and RFC 6638 parameters.
+     */
+    private fun formatAttendee(attendee: Attendee): String {
+        val params = mutableListOf<String>()
+
+        attendee.name?.let { params.add("CN=${escapeParamValue(it)}") }
+
+        // Only output CUTYPE if not default (INDIVIDUAL)
+        if (attendee.cutype != CUType.INDIVIDUAL) {
+            params.add("CUTYPE=${attendee.cutype.toICalString()}")
+        }
+
+        // Only output ROLE if not default (REQ-PARTICIPANT)
+        if (attendee.role != AttendeeRole.REQ_PARTICIPANT) {
+            params.add("ROLE=${attendee.role.toICalString()}")
+        }
+
+        params.add("PARTSTAT=${attendee.partStat.toICalString()}")
+
+        if (attendee.rsvp) params.add("RSVP=TRUE")
+
+        attendee.dir?.let { params.add("DIR=\"$it\"") }
+        attendee.member?.let { params.add("MEMBER=\"$it\"") }
+
+        if (attendee.delegatedTo.isNotEmpty()) {
+            params.add("DELEGATED-TO=${attendee.delegatedTo.joinToString(",") { "\"mailto:$it\"" }}")
+        }
+        if (attendee.delegatedFrom.isNotEmpty()) {
+            params.add("DELEGATED-FROM=${attendee.delegatedFrom.joinToString(",") { "\"mailto:$it\"" }}")
+        }
+
+        // RFC 6638 scheduling parameters
+        attendee.sentBy?.let { params.add("SENT-BY=\"mailto:$it\"") }
+        attendee.scheduleAgent?.let { params.add("SCHEDULE-AGENT=${it.value}") }
+        attendee.scheduleForceSend?.let { params.add("SCHEDULE-FORCE-SEND=${it.value}") }
+        // Note: SCHEDULE-STATUS is server-generated, typically not output on requests
+
+        val paramStr = if (params.isNotEmpty()) ";${params.joinToString(";")}" else ""
+        return "ATTENDEE$paramStr:mailto:${attendee.email}"
+    }
+
     // ============ RFC 7986 Property Generation ============
 
     /**
@@ -459,5 +540,57 @@ class ICalGenerator(
         conference.language?.let { params.add("LANGUAGE=$it") }
 
         appendLine("CONFERENCE;${params.joinToString(";")}:${conference.uri}")
+    }
+
+    companion object {
+        /**
+         * Generate a free/busy request (VFREEBUSY with METHOD:REQUEST).
+         * Stateless utility function - can be called without ICalGenerator instance.
+         *
+         * @param organizer The calendar user requesting free/busy info
+         * @param attendees The attendees to query for free/busy
+         * @param dtstart Start of the query time range
+         * @param dtend End of the query time range
+         * @param uid Optional UID (generates random if not provided)
+         * @return Complete VCALENDAR string with VFREEBUSY
+         */
+        fun generateFreeBusyRequest(
+            organizer: Organizer,
+            attendees: List<Attendee>,
+            dtstart: ICalDateTime,
+            dtend: ICalDateTime,
+            uid: String = java.util.UUID.randomUUID().toString().uppercase()
+        ): String {
+            return buildString {
+                appendLine("BEGIN:VCALENDAR")
+                appendLine("VERSION:2.0")
+                appendLine("PRODID:-//iCalDAV//EN")
+                appendLine("METHOD:REQUEST")
+                appendLine("BEGIN:VFREEBUSY")
+                appendLine("UID:$uid")
+                appendLine("DTSTAMP:${ICalDateTime.now().toICalString()}")
+                appendLine("DTSTART:${dtstart.toICalString()}")
+                appendLine("DTEND:${dtend.toICalString()}")
+
+                // Organizer
+                val orgParams = mutableListOf<String>()
+                organizer.name?.let { orgParams.add("CN=$it") }
+                organizer.sentBy?.let { orgParams.add("SENT-BY=\"mailto:$it\"") }
+                val orgParamStr = if (orgParams.isNotEmpty()) ";${orgParams.joinToString(";")}" else ""
+                appendLine("ORGANIZER$orgParamStr:mailto:${organizer.email}")
+
+                // Attendees
+                attendees.forEach { att ->
+                    val attParams = mutableListOf<String>()
+                    att.name?.let { attParams.add("CN=$it") }
+                    attParams.add("PARTSTAT=${att.partStat.toICalString()}")
+                    val attParamStr = if (attParams.isNotEmpty()) ";${attParams.joinToString(";")}" else ""
+                    appendLine("ATTENDEE$attParamStr:mailto:${att.email}")
+                }
+
+                appendLine("END:VFREEBUSY")
+                appendLine("END:VCALENDAR")
+            }
+        }
     }
 }

@@ -239,4 +239,21 @@ object RequestBuilder {
   </D:set>
 </C:mkcalendar>"""
     }
+
+    /**
+     * PROPFIND request for discovering scheduling URLs (RFC 6638).
+     *
+     * Requests schedule-inbox-URL and schedule-outbox-URL from the principal.
+     *
+     * @return XML request body
+     */
+    fun propfindSchedulingUrls(): String {
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:prop>
+    <C:schedule-inbox-URL/>
+    <C:schedule-outbox-URL/>
+  </D:prop>
+</D:propfind>"""
+    }
 }

@@ -67,6 +67,7 @@ class CalDavDiscovery(
      * 1. PROPFIND on URL → current-user-principal
      * 2. PROPFIND on principal → calendar-home-set
      * 3. PROPFIND on calendar-home → list calendars
+     * 4. PROPFIND on principal → schedule-inbox-URL, schedule-outbox-URL (optional)
      */
     private fun discoverAccountDirect(serverUrl: String): DavResult<CalDavAccount> {
         // Step 1: Discover principal URL
@@ -89,12 +90,35 @@ class CalDavDiscovery(
             return calendarsResult as DavResult<CalDavAccount>
         }
 
+        // Step 4: Discover scheduling URLs (optional - graceful degradation)
+        val schedulingUrls = try {
+            val schedResult = client.propfind(
+                url = principalUrl,
+                body = RequestBuilder.propfindSchedulingUrls(),
+                depth = DavDepth.ZERO
+            )
+            if (schedResult is DavResult.Success) {
+                val props = schedResult.value.responses.firstOrNull()?.properties
+                val inboxUrl = props?.get("schedule-inbox-URL")?.let { resolveUrl(serverUrl, it) }
+                val outboxUrl = props?.get("schedule-outbox-URL")?.let { resolveUrl(serverUrl, it) }
+                if (inboxUrl != null || outboxUrl != null) {
+                    SchedulingUrls(
+                        scheduleInboxUrl = inboxUrl,
+                        scheduleOutboxUrl = outboxUrl
+                    )
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null  // Scheduling not supported - continue without it
+        }
+
         return DavResult.success(
             CalDavAccount(
                 serverUrl = serverUrl,
                 principalUrl = principalUrl,
                 calendarHomeUrl = calendarHomeUrl,
-                calendars = calendarsResult.value
+                calendars = calendarsResult.value,
+                schedulingUrls = schedulingUrls
             )
         )
     }

@@ -1,9 +1,11 @@
 package org.onekash.icaldav.compat
 
+import net.fortuna.ical4j.model.Calendar
 import net.fortuna.ical4j.model.Property
 import net.fortuna.ical4j.model.Parameter
 import net.fortuna.ical4j.model.component.VEvent
 import net.fortuna.ical4j.model.component.VAlarm
+import net.fortuna.ical4j.model.component.VFreeBusy
 import net.fortuna.ical4j.model.WeekDay
 import java.time.DayOfWeek
 
@@ -32,6 +34,14 @@ inline fun <reified T : Property> VEvent.getPropertyOrNull(name: String): T? {
 }
 
 inline fun <reified T : Property> VAlarm.getPropertyOrNull(name: String): T? {
+    return getProperty<T>(name).orElse(null)
+}
+
+inline fun <reified T : Property> VFreeBusy.getPropertyOrNull(name: String): T? {
+    return getProperty<T>(name).orElse(null)
+}
+
+inline fun <reified T : Property> Calendar.getPropertyOrNull(name: String): T? {
     return getProperty<T>(name).orElse(null)
 }
 

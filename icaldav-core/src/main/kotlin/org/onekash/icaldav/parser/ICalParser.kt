@@ -16,6 +16,7 @@ import net.fortuna.ical4j.model.Component
 import net.fortuna.ical4j.model.Property
 import net.fortuna.ical4j.model.component.VAlarm
 import net.fortuna.ical4j.model.component.VEvent
+import net.fortuna.ical4j.model.component.VFreeBusy
 import java.io.StringReader
 import java.time.Duration
 
@@ -97,6 +98,43 @@ class ICalParser {
                 }
 
             ParseResult.success(events)
+        } catch (e: Exception) {
+            ParseResult.error("Failed to parse iCalendar data: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Parse result with METHOD and events.
+     * Used for iTIP message processing where METHOD indicates the scheduling action.
+     */
+    data class CalendarParseResult(
+        val method: ITipMethod?,
+        val events: List<ICalEvent>
+    )
+
+    /**
+     * Parse iCal string and return METHOD along with events.
+     * For iTIP scheduling messages (REQUEST, REPLY, CANCEL, etc.).
+     *
+     * @param icalData Raw iCalendar string
+     * @return CalendarParseResult with optional method and events
+     */
+    fun parseWithMethod(icalData: String): ParseResult<CalendarParseResult> {
+        return try {
+            val unfolded = unfoldICalData(icalData)
+            val builder = CalendarBuilder()
+            val calendar = builder.build(StringReader(unfolded))
+
+            // Extract METHOD from VCALENDAR
+            val methodProp = calendar.getPropertyOrNull<Property>("METHOD")
+            val method = methodProp?.value?.let { ITipMethod.fromString(it) }
+
+            val events = calendar.getComponents<VEvent>(Component.VEVENT)
+                .mapNotNull { vevent ->
+                    parseVEvent(vevent).getOrNull()
+                }
+
+            ParseResult.success(CalendarParseResult(method, events))
         } catch (e: Exception) {
             ParseResult.error("Failed to parse iCalendar data: ${e.message}", e)
         }
@@ -434,6 +472,7 @@ class ICalParser {
      * Parse ORGANIZER property.
      *
      * Format: ORGANIZER;CN=John Doe;SENT-BY="mailto:assistant@example.com":mailto:john@example.com
+     * Extended to support RFC 6638 scheduling parameters.
      */
     private fun parseOrganizer(vevent: VEvent): Organizer? {
         val organizerProp = vevent.getPropertyOrNull<Property>("ORGANIZER")
@@ -447,17 +486,42 @@ class ICalParser {
         val sentBy = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SENT-BY")
             ?.value?.let { extractEmailFromCalAddress(it) }
 
+        // RFC 6638 scheduling parameters
+        val scheduleAgentValue = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SCHEDULE-AGENT")
+            ?.value
+        val scheduleAgent = scheduleAgentValue?.let { ScheduleAgent.fromString(it) }
+
+        val scheduleStatusValue = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SCHEDULE-STATUS")
+            ?.value
+        val scheduleStatus = scheduleStatusValue?.let { parseScheduleStatuses(it) }
+
+        val scheduleForceSendValue = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SCHEDULE-FORCE-SEND")
+            ?.value
+        val scheduleForceSend = scheduleForceSendValue?.let { ScheduleForceSend.fromString(it) }
+
         return Organizer(
             email = email,
             name = cn,
-            sentBy = sentBy
+            sentBy = sentBy,
+            scheduleAgent = scheduleAgent,
+            scheduleStatus = scheduleStatus,
+            scheduleForceSend = scheduleForceSend
         )
+    }
+
+    /**
+     * Parse SCHEDULE-STATUS values (can be comma-separated).
+     */
+    private fun parseScheduleStatuses(value: String): List<ScheduleStatus> {
+        return value.split(",").map { ScheduleStatus.fromString(it.trim()) }
     }
 
     /**
      * Parse ATTENDEE properties.
      *
      * Format: ATTENDEE;CN=Jane Doe;PARTSTAT=ACCEPTED;ROLE=REQ-PARTICIPANT:mailto:jane@example.com
+     * Extended to support RFC 5545 parameters: CUTYPE, DIR, MEMBER, DELEGATED-TO, DELEGATED-FROM
+     * and RFC 6638 scheduling parameters: SENT-BY, SCHEDULE-AGENT, SCHEDULE-STATUS, SCHEDULE-FORCE-SEND
      */
     private fun parseAttendees(vevent: VEvent): List<Attendee> {
         val attendeeProps = vevent.getProperties<Property>("ATTENDEE")
@@ -482,14 +546,69 @@ class ICalParser {
                 ?.value
             val rsvp = rsvpValue?.equals("TRUE", ignoreCase = true) ?: false
 
+            // RFC 5545 parameters
+            val cutypeValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("CUTYPE")
+                ?.value
+            val cutype = CUType.fromString(cutypeValue)
+
+            val dir = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("DIR")
+                ?.value?.removeSurrounding("\"")
+
+            val member = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("MEMBER")
+                ?.value?.removeSurrounding("\"")
+
+            val delegatedToValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("DELEGATED-TO")
+                ?.value
+            val delegatedTo = parseMailtoList(delegatedToValue)
+
+            val delegatedFromValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("DELEGATED-FROM")
+                ?.value
+            val delegatedFrom = parseMailtoList(delegatedFromValue)
+
+            // RFC 6638 scheduling parameters
+            val sentBy = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SENT-BY")
+                ?.value?.let { extractEmailFromCalAddress(it) }
+
+            val scheduleAgentValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SCHEDULE-AGENT")
+                ?.value
+            val scheduleAgent = scheduleAgentValue?.let { ScheduleAgent.fromString(it) }
+
+            val scheduleStatusValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SCHEDULE-STATUS")
+                ?.value
+            val scheduleStatus = scheduleStatusValue?.let { parseScheduleStatuses(it) }
+
+            val scheduleForceSendValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SCHEDULE-FORCE-SEND")
+                ?.value
+            val scheduleForceSend = scheduleForceSendValue?.let { ScheduleForceSend.fromString(it) }
+
             Attendee(
                 email = email,
                 name = cn,
                 partStat = partStat,
                 role = role,
-                rsvp = rsvp
+                rsvp = rsvp,
+                cutype = cutype,
+                dir = dir,
+                member = member,
+                delegatedTo = delegatedTo,
+                delegatedFrom = delegatedFrom,
+                sentBy = sentBy,
+                scheduleAgent = scheduleAgent,
+                scheduleStatus = scheduleStatus,
+                scheduleForceSend = scheduleForceSend
             )
         }
+    }
+
+    /**
+     * Parse comma-separated mailto: list.
+     * Handles format: "mailto:a@b.com","mailto:c@d.com"
+     */
+    private fun parseMailtoList(value: String?): List<String> {
+        if (value.isNullOrBlank()) return emptyList()
+        return value.split(",")
+            .map { it.trim().removeSurrounding("\"").let { addr -> extractEmailFromCalAddress(addr) } }
+            .filter { it.isNotEmpty() }
     }
 
     /**
@@ -698,5 +817,128 @@ class ICalParser {
         }
 
         return raw
+    }
+
+    // ============ VFREEBUSY Parsing ============
+
+    /**
+     * Parse VFREEBUSY component from iCal data.
+     *
+     * @param icalData Raw iCalendar string containing VFREEBUSY
+     * @return Parsed ICalFreeBusy or null if not found/invalid
+     */
+    fun parseFreeBusy(icalData: String): ICalFreeBusy? {
+        return try {
+            val unfolded = unfoldICalData(icalData)
+            val builder = CalendarBuilder()
+            val calendar = builder.build(StringReader(unfolded))
+
+            val vfb = calendar.getComponents<VFreeBusy>(Component.VFREEBUSY).firstOrNull()
+                ?: return null
+
+            parseVFreeBusy(vfb)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Parse a VFreeBusy component.
+     */
+    private fun parseVFreeBusy(vfb: VFreeBusy): ICalFreeBusy {
+        val uid = vfb.getPropertyOrNull<Property>("UID")?.value
+            ?: java.util.UUID.randomUUID().toString().uppercase()
+
+        val dtstamp = vfb.getPropertyOrNull<Property>("DTSTAMP")
+            ?.let { parseDateTimeFromProperty(it) }
+            ?: ICalDateTime.now()
+
+        val dtstart = vfb.getPropertyOrNull<Property>("DTSTART")
+            ?.let { parseDateTimeFromProperty(it) }
+            ?: ICalDateTime.now()
+
+        val dtend = vfb.getPropertyOrNull<Property>("DTEND")
+            ?.let { parseDateTimeFromProperty(it) }
+            ?: ICalDateTime.now()
+
+        // Parse ORGANIZER (reuse from VEvent parsing logic)
+        val organizerProp = vfb.getPropertyOrNull<Property>("ORGANIZER")
+        val organizer = organizerProp?.let { prop ->
+            val email = extractEmailFromCalAddress(prop.value)
+            val cn = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("CN")?.value
+            val sentBy = prop.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SENT-BY")
+                ?.value?.let { extractEmailFromCalAddress(it) }
+            Organizer(email = email, name = cn, sentBy = sentBy)
+        }
+
+        // Parse ATTENDEEs
+        val attendeeProps = vfb.getProperties<Property>("ATTENDEE")
+        val attendees = attendeeProps.mapNotNull { attendeeProp ->
+            val email = extractEmailFromCalAddress(attendeeProp.value)
+            if (email.isBlank()) return@mapNotNull null
+            val cn = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("CN")?.value
+            Attendee(
+                email = email,
+                name = cn,
+                partStat = PartStat.NEEDS_ACTION,
+                role = AttendeeRole.REQ_PARTICIPANT,
+                rsvp = false
+            )
+        }
+
+        // Parse FREEBUSY periods
+        val freeBusyProps = vfb.getProperties<Property>("FREEBUSY")
+        val freeBusyPeriods = freeBusyProps.flatMap { fbProp ->
+            val fbtypeParam = fbProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("FBTYPE")?.value
+            val fbType = FreeBusyType.fromString(fbtypeParam ?: "BUSY")
+            parseFreeBusyPeriods(fbProp.value, fbType)
+        }
+
+        return ICalFreeBusy(
+            uid = uid,
+            dtstamp = dtstamp,
+            dtstart = dtstart,
+            dtend = dtend,
+            organizer = organizer,
+            attendees = attendees,
+            freeBusyPeriods = freeBusyPeriods
+        )
+    }
+
+    /**
+     * Parse FREEBUSY periods from property value.
+     * Format: "20231215T090000Z/20231215T100000Z,20231215T140000Z/20231215T150000Z"
+     * or with duration: "20231215T090000Z/PT1H"
+     */
+    private fun parseFreeBusyPeriods(value: String, type: FreeBusyType): List<FreeBusyPeriod> {
+        return value.split(",").mapNotNull { periodStr ->
+            try {
+                val parts = periodStr.trim().split("/")
+                if (parts.size != 2) return@mapNotNull null
+
+                val start = ICalDateTime.parse(parts[0])
+
+                val end = if (parts[1].startsWith("P")) {
+                    // Duration format
+                    val duration = ICalAlarm.parseDuration(parts[1])
+                    if (duration != null) {
+                        ICalDateTime.fromTimestamp(
+                            timestamp = start.timestamp + duration.toMillis(),
+                            timezone = start.timezone,
+                            isDate = start.isDate
+                        )
+                    } else {
+                        return@mapNotNull null
+                    }
+                } else {
+                    // DateTime format
+                    ICalDateTime.parse(parts[1])
+                }
+
+                FreeBusyPeriod(start = start, end = end, type = type)
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 }

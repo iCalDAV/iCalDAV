@@ -508,6 +508,116 @@ class CalDavClient(
         return formatter.format(instant.atZone(ZoneOffset.UTC))
     }
 
+    // ============ Scheduling Operations (RFC 6638) ============
+
+    /**
+     * Discover scheduling inbox/outbox URLs from principal.
+     *
+     * @param principalUrl User's principal URL
+     * @return SchedulingUrls with inbox and outbox URLs
+     */
+    fun discoverSchedulingUrls(principalUrl: String): DavResult<SchedulingUrls> {
+        val result = webDavClient.propfind(
+            url = principalUrl,
+            body = RequestBuilder.propfindSchedulingUrls(),
+            depth = DavDepth.ZERO
+        )
+        return result.map { multistatus ->
+            val props = multistatus.responses.firstOrNull()?.properties
+            SchedulingUrls(
+                scheduleInboxUrl = props?.get("schedule-inbox-URL"),
+                scheduleOutboxUrl = props?.get("schedule-outbox-URL")
+            )
+        }
+    }
+
+    /**
+     * Check if server supports auto-schedule before sending messages.
+     *
+     * Example usage:
+     * ```kotlin
+     * if (client.checkSchedulingSupport(serverUrl)) {
+     *     client.sendSchedulingMessage(outboxUrl, itipMessage, recipients)
+     * } else {
+     *     // Fall back to client-side scheduling or show error
+     * }
+     * ```
+     *
+     * @param serverUrl Server URL for capability check
+     * @return true if server supports calendar-auto-schedule
+     */
+    fun checkSchedulingSupport(serverUrl: String): Boolean {
+        val caps = getCapabilities(serverUrl).getOrNull()
+        return caps?.supportsAutoSchedule == true
+    }
+
+    /**
+     * Send an iTIP message to attendees via schedule-outbox.
+     *
+     * IMPORTANT: Before calling this, verify server supports scheduling:
+     * - Check ServerCapabilities.supportsAutoSchedule
+     * - Verify schedulingUrls.supportsScheduling is true
+     *
+     * @param outboxUrl The schedule-outbox URL
+     * @param itipMessage iTIP message (from ITipBuilder)
+     * @param recipients List of attendee email addresses
+     * @return SchedulingResult with per-recipient status
+     */
+    fun sendSchedulingMessage(
+        outboxUrl: String,
+        itipMessage: String,
+        recipients: List<String>
+    ): DavResult<SchedulingResult> {
+        val result = webDavClient.post(outboxUrl, itipMessage, recipients)
+        return result.map { responseXml ->
+            val schedulingResult = org.onekash.icaldav.xml.ScheduleResponseParser.parse(responseXml)
+            schedulingResult.copy(rawRequest = itipMessage)
+        }
+    }
+
+    /**
+     * Query free/busy time for attendees.
+     *
+     * @param outboxUrl The schedule-outbox URL
+     * @param organizer The requesting organizer
+     * @param attendees Attendees to query
+     * @param dtstart Start of time range
+     * @param dtend End of time range
+     * @return Map of attendee email to their free/busy information
+     */
+    fun queryFreeBusy(
+        outboxUrl: String,
+        organizer: Organizer,
+        attendees: List<Attendee>,
+        dtstart: ICalDateTime,
+        dtend: ICalDateTime
+    ): DavResult<Map<String, ICalFreeBusy>> {
+        val request = ICalGenerator.generateFreeBusyRequest(
+            organizer = organizer,
+            attendees = attendees,
+            dtstart = dtstart,
+            dtend = dtend
+        )
+
+        val result = webDavClient.post(outboxUrl, request, attendees.map { it.email })
+        return result.map { responseXml ->
+            val schedulingResult = org.onekash.icaldav.xml.ScheduleResponseParser.parse(responseXml)
+
+            schedulingResult.recipientResults
+                .filter { it.calendarData != null }
+                .associate { recipientResult ->
+                    val freeBusy = iCalParser.parseFreeBusy(recipientResult.calendarData!!)
+                        ?: ICalFreeBusy(
+                            uid = "",
+                            dtstamp = ICalDateTime.now(),
+                            dtstart = dtstart,
+                            dtend = dtend
+                        )
+                    recipientResult.recipient to freeBusy
+                }
+        }
+    }
+
     companion object {
         // Cache TTL: 1 hour (capabilities rarely change)
         private const val CAPABILITIES_CACHE_TTL_MS = 3600_000L

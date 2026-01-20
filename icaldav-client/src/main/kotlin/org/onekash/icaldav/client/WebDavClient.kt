@@ -369,6 +369,64 @@ class WebDavClient(
     }
 
     /**
+     * Perform POST request for CalDAV scheduling (RFC 6638).
+     *
+     * Used to send iTIP messages to the schedule-outbox for delivery
+     * to attendees or to query free/busy information.
+     *
+     * @param url The schedule-outbox URL
+     * @param body iTIP message (iCalendar with METHOD)
+     * @param recipients List of recipient email addresses
+     * @return Raw XML response body for parsing by ScheduleResponseParser
+     */
+    fun post(
+        url: String,
+        body: String,
+        recipients: List<String>
+    ): DavResult<String> {
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .post(body.toRequestBody(icalMediaType))
+            .header("Content-Type", "text/calendar; charset=utf-8")
+            .applyAuth()
+
+        // Add Recipient headers for each attendee
+        recipients.forEach { recipient ->
+            requestBuilder.addHeader("Recipient", "mailto:$recipient")
+        }
+
+        // Originator header - the calendar user making the request
+        auth?.let { credentials ->
+            if (credentials is DavAuth.Basic) {
+                requestBuilder.header("Originator", "mailto:${credentials.username}")
+            }
+        }
+
+        return executeWithRetry(requestBuilder.build()) { response ->
+            when {
+                response.isSuccessful -> {
+                    try {
+                        DavResult.success(response.bodyWithLimit())
+                    } catch (e: IOException) {
+                        DavResult.networkError(e)
+                    }
+                }
+                response.code == 507 -> {
+                    // Insufficient Storage - schedule-outbox full
+                    DavResult.httpError(507, "Schedule outbox full")
+                }
+                response.code == 403 -> {
+                    // Forbidden - not authorized to schedule
+                    DavResult.httpError(403, "Not authorized to schedule")
+                }
+                else -> {
+                    DavResult.httpError(response.code, response.message)
+                }
+            }
+        }
+    }
+
+    /**
      * Execute request and parse multistatus response.
      * Uses retry logic and response size limiting.
      */

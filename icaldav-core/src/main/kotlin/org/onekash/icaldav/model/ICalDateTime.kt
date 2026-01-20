@@ -135,6 +135,18 @@ data class ICalDateTime(
         }
 
         /**
+         * Create current UTC timestamp.
+         */
+        fun now(): ICalDateTime {
+            return ICalDateTime(
+                timestamp = System.currentTimeMillis(),
+                timezone = null,
+                isUtc = true,
+                isDate = false
+            )
+        }
+
+        /**
          * Create from Unix timestamp (milliseconds).
          */
         fun fromTimestamp(
