@@ -163,7 +163,7 @@ class CalendarProviderHelper(
         calendarId: Long,
         asSyncAdapter: Boolean = true
     ): Long {
-        val values = CalendarContractMapper.toContentValues(event, calendarId)
+        val values = CalendarContractMapper.toContentValues(event, calendarId, asSyncAdapter)
         val uri = if (asSyncAdapter) {
             SyncAdapterUri.asSyncAdapter(Events.CONTENT_URI, accountName, accountType)
         } else {
@@ -189,7 +189,7 @@ class CalendarProviderHelper(
         calendarId: Long,
         asSyncAdapter: Boolean = true
     ): Int {
-        val values = CalendarContractMapper.toContentValues(event, calendarId)
+        val values = CalendarContractMapper.toContentValues(event, calendarId, asSyncAdapter)
         val uri = if (asSyncAdapter) {
             SyncAdapterUri.asSyncAdapter(
                 ContentUris.withAppendedId(Events.CONTENT_URI, eventId),
@@ -885,14 +885,12 @@ class CalendarProviderHelper(
     fun countDirtyEvents(calendarId: Long): Int {
         contentResolver.query(
             Events.CONTENT_URI,
-            arrayOf("COUNT(*)"),
+            arrayOf(Events._ID),
             "${Events.CALENDAR_ID} = ? AND ${Events.DIRTY} = 1 AND ${Events.DELETED} = 0",
             arrayOf(calendarId.toString()),
             null
         )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                return cursor.getInt(0)
-            }
+            return cursor.count
         }
         return 0
     }
@@ -906,14 +904,12 @@ class CalendarProviderHelper(
     fun countDeletedEvents(calendarId: Long): Int {
         contentResolver.query(
             Events.CONTENT_URI,
-            arrayOf("COUNT(*)"),
+            arrayOf(Events._ID),
             "${Events.CALENDAR_ID} = ? AND ${Events.DELETED} = 1",
             arrayOf(calendarId.toString()),
             null
         )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                return cursor.getInt(0)
-            }
+            return cursor.count
         }
         return 0
     }
@@ -934,14 +930,12 @@ class CalendarProviderHelper(
 
         contentResolver.query(
             Events.CONTENT_URI,
-            arrayOf("COUNT(*)"),
+            arrayOf(Events._ID),
             selection,
             arrayOf(calendarId.toString()),
             null
         )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                return cursor.getInt(0)
-            }
+            return cursor.count
         }
         return 0
     }
@@ -1703,14 +1697,12 @@ class CalendarProviderHelper(
 
         contentResolver.query(
             Events.CONTENT_URI,
-            arrayOf("COUNT(*)"),
+            arrayOf(Events._ID),
             "${Events.ORIGINAL_SYNC_ID} = ? AND ${Events.DELETED} = 0",
             arrayOf(masterSyncId),
             null
         )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                return cursor.getInt(0)
-            }
+            return cursor.count
         }
 
         return 0

@@ -375,40 +375,34 @@ class BatchOperationIntegrationTest {
     private fun queryEventCount(): Int {
         val cursor = contentResolver.query(
             Events.CONTENT_URI,
-            arrayOf("COUNT(*)"),
+            arrayOf(Events._ID),
             "${Events.CALENDAR_ID} = ?",
             arrayOf(testCalendarId.toString()),
             null
         )
-        return cursor?.use {
-            if (it.moveToFirst()) it.getInt(0) else 0
-        } ?: 0
+        return cursor?.use { it.count } ?: 0
     }
 
     private fun queryReminderCount(eventId: Long): Int {
         val cursor = contentResolver.query(
             CalendarContract.Reminders.CONTENT_URI,
-            arrayOf("COUNT(*)"),
+            arrayOf(CalendarContract.Reminders._ID),
             "${CalendarContract.Reminders.EVENT_ID} = ?",
             arrayOf(eventId.toString()),
             null
         )
-        return cursor?.use {
-            if (it.moveToFirst()) it.getInt(0) else 0
-        } ?: 0
+        return cursor?.use { it.count } ?: 0
     }
 
     private fun queryAttendeeCount(eventId: Long): Int {
         val cursor = contentResolver.query(
             CalendarContract.Attendees.CONTENT_URI,
-            arrayOf("COUNT(*)"),
+            arrayOf(CalendarContract.Attendees._ID),
             "${CalendarContract.Attendees.EVENT_ID} = ?",
             arrayOf(eventId.toString()),
             null
         )
-        return cursor?.use {
-            if (it.moveToFirst()) it.getInt(0) else 0
-        } ?: 0
+        return cursor?.use { it.count } ?: 0
     }
 
     private fun asSyncAdapter(uri: android.net.Uri): android.net.Uri {

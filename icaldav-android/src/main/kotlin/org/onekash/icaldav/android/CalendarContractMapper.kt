@@ -41,15 +41,18 @@ object CalendarContractMapper {
      *
      * @param event The iCalDAV event to convert
      * @param calendarId The Android calendar ID to associate with this event
+     * @param asSyncAdapter Whether operating as sync adapter (required for _SYNC_ID columns)
      * @return ContentValues ready for ContentResolver.insert() or update()
      */
-    fun toContentValues(event: ICalEvent, calendarId: Long): ContentValues {
+    fun toContentValues(event: ICalEvent, calendarId: Long, asSyncAdapter: Boolean = true): ContentValues {
         return ContentValues().apply {
             // Calendar association
             put(Events.CALENDAR_ID, calendarId)
 
-            // Sync ID for CalDAV UID mapping
-            put(Events._SYNC_ID, event.uid)
+            // Sync ID for CalDAV UID mapping (only sync adapters can write this)
+            if (asSyncAdapter) {
+                put(Events._SYNC_ID, event.uid)
+            }
 
             // Basic fields
             put(Events.TITLE, event.summary)
@@ -79,15 +82,32 @@ object CalendarContractMapper {
                 put(Events.EXDATE, event.exdates.joinToString(",") { it.toICalString() })
             }
 
-            // RECURRENCE-ID handling for exception events
+            // RECURRENCE-ID handling for exception events (ORIGINAL_SYNC_ID requires sync adapter)
             event.recurrenceId?.let { recId ->
-                put(Events.ORIGINAL_SYNC_ID, event.masterUid())
+                if (asSyncAdapter) {
+                    put(Events.ORIGINAL_SYNC_ID, event.masterUid())
+                }
                 put(Events.ORIGINAL_INSTANCE_TIME, recId.timestamp)
                 put(Events.ORIGINAL_ALL_DAY, if (recId.isDate) 1 else 0)
             }
 
-            // SEQUENCE for conflict detection
-            put(Events.SYNC_DATA3, event.sequence.toString())
+            // SYNC_DATA columns are restricted to sync adapters only
+            if (asSyncAdapter) {
+                // SEQUENCE for conflict detection
+                put(Events.SYNC_DATA3, event.sequence.toString())
+
+                // Color (if present)
+                event.color?.let { color ->
+                    // CalendarContract expects ARGB int, but ICalEvent stores CSS color string
+                    // Store raw value in extended property for round-trip
+                    put(Events.SYNC_DATA4, color)
+                }
+
+                // Timestamps for sync
+                event.lastModified?.let {
+                    put(Events.SYNC_DATA5, it.timestamp.toString())
+                }
+            }
 
             // URL
             event.url?.let { put(Events.CUSTOM_APP_URI, it) }
@@ -95,18 +115,6 @@ object CalendarContractMapper {
             // Organizer (CN format for display)
             event.organizer?.let { org ->
                 put(Events.ORGANIZER, org.email)
-            }
-
-            // Color (if present)
-            event.color?.let { color ->
-                // CalendarContract expects ARGB int, but ICalEvent stores CSS color string
-                // Store raw value in extended property for round-trip
-                put(Events.SYNC_DATA4, color)
-            }
-
-            // Timestamps for sync
-            event.lastModified?.let {
-                put(Events.SYNC_DATA5, it.timestamp.toString())
             }
 
             // ACCESS_LEVEL from CLASS property (RFC 5545)
