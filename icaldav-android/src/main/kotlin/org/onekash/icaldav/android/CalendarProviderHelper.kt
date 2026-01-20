@@ -20,6 +20,7 @@ import android.provider.CalendarContract.Reminders
 import android.provider.CalendarContract.SyncState
 import org.onekash.icaldav.model.Attendee
 import org.onekash.icaldav.model.ICalAlarm
+import org.onekash.icaldav.model.ICalConference
 import org.onekash.icaldav.model.ICalEvent
 
 /**
@@ -1121,6 +1122,133 @@ class CalendarProviderHelper(
         }
 
         return ExtendedPropertiesMapper.toRawPropertiesMap(properties)
+    }
+
+    // ==================== Conference Operations (RFC 7986) ====================
+
+    /**
+     * Insert conferences for an event.
+     *
+     * Stores RFC 7986 CONFERENCE data in ExtendedProperties as JSON.
+     * Android's CalendarContract doesn't natively support conferences,
+     * so we preserve them using extended properties.
+     *
+     * @param conferences List of conferences to store
+     * @param eventId The event ID
+     * @param asSyncAdapter Whether to operate as sync adapter
+     * @return The extended property ID, or -1 if insertion failed or list is empty
+     */
+    fun insertConferences(
+        conferences: List<ICalConference>,
+        eventId: Long,
+        asSyncAdapter: Boolean = true
+    ): Long {
+        val values = ConferenceMapper.toContentValues(conferences, eventId) ?: return -1
+
+        val uri = if (asSyncAdapter) {
+            SyncAdapterUri.asSyncAdapter(ExtendedProperties.CONTENT_URI, accountName, accountType)
+        } else {
+            ExtendedProperties.CONTENT_URI
+        }
+
+        val resultUri = contentResolver.insert(uri, values)
+        return resultUri?.let { ContentUris.parseId(it) } ?: -1
+    }
+
+    /**
+     * Query conferences for an event.
+     *
+     * Retrieves RFC 7986 CONFERENCE data from ExtendedProperties.
+     *
+     * @param eventId The event ID
+     * @return List of ICalConference objects, or empty list if none stored
+     */
+    fun queryConferences(eventId: Long): List<ICalConference> {
+        contentResolver.query(
+            ExtendedProperties.CONTENT_URI,
+            arrayOf(ExtendedProperties.VALUE),
+            "${ExtendedProperties.EVENT_ID} = ? AND ${ExtendedProperties.NAME} = ?",
+            arrayOf(eventId.toString(), ConferenceMapper.NAME_CONFERENCE),
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val json = cursor.getStringOrNull(ExtendedProperties.VALUE)
+                return ConferenceMapper.fromJson(json)
+            }
+        }
+        return emptyList()
+    }
+
+    /**
+     * Delete conferences for an event.
+     *
+     * @param eventId The event ID
+     * @param asSyncAdapter Whether to operate as sync adapter
+     * @return Number of rows deleted
+     */
+    fun deleteConferencesForEvent(eventId: Long, asSyncAdapter: Boolean = true): Int {
+        val uri = if (asSyncAdapter) {
+            SyncAdapterUri.asSyncAdapter(ExtendedProperties.CONTENT_URI, accountName, accountType)
+        } else {
+            ExtendedProperties.CONTENT_URI
+        }
+
+        return contentResolver.delete(
+            uri,
+            "${ExtendedProperties.EVENT_ID} = ? AND ${ExtendedProperties.NAME} = ?",
+            arrayOf(eventId.toString(), ConferenceMapper.NAME_CONFERENCE)
+        )
+    }
+
+    /**
+     * Update conferences for an event.
+     *
+     * Deletes existing conferences and inserts new ones.
+     *
+     * @param conferences New list of conferences
+     * @param eventId The event ID
+     * @param asSyncAdapter Whether to operate as sync adapter
+     * @return The new extended property ID, or -1 if insertion failed
+     */
+    fun updateConferences(
+        conferences: List<ICalConference>,
+        eventId: Long,
+        asSyncAdapter: Boolean = true
+    ): Long {
+        deleteConferencesForEvent(eventId, asSyncAdapter)
+        return insertConferences(conferences, eventId, asSyncAdapter)
+    }
+
+    /**
+     * Get the primary video conference URL for an event.
+     *
+     * Convenience method for quick access to the main meeting link.
+     *
+     * @param eventId The event ID
+     * @return The primary video conference URL, or null if none found
+     */
+    fun getPrimaryConferenceUrl(eventId: Long): String? {
+        val conferences = queryConferences(eventId)
+        return ConferenceMapper.getPrimaryVideoUrl(conferences)
+    }
+
+    /**
+     * Check if an event has any conference links.
+     *
+     * @param eventId The event ID
+     * @return True if the event has at least one conference
+     */
+    fun hasConferences(eventId: Long): Boolean {
+        contentResolver.query(
+            ExtendedProperties.CONTENT_URI,
+            arrayOf(ExtendedProperties._ID),
+            "${ExtendedProperties.EVENT_ID} = ? AND ${ExtendedProperties.NAME} = ?",
+            arrayOf(eventId.toString(), ConferenceMapper.NAME_CONFERENCE),
+            null
+        )?.use { cursor ->
+            return cursor.count > 0
+        }
+        return false
     }
 
     // ==================== Colors Operations ====================
