@@ -82,6 +82,11 @@ object CalendarContractMapper {
                 put(Events.EXDATE, event.exdates.joinToString(",") { it.toICalString() })
             }
 
+            // Additional recurrence dates (RDATE)
+            if (event.rdates.isNotEmpty()) {
+                put(Events.RDATE, event.rdates.joinToString(",") { it.toICalString() })
+            }
+
             // RECURRENCE-ID handling for exception events (ORIGINAL_SYNC_ID requires sync adapter)
             event.recurrenceId?.let { recId ->
                 if (asSyncAdapter) {
@@ -118,39 +123,39 @@ object CalendarContractMapper {
             }
 
             // ACCESS_LEVEL from CLASS property (RFC 5545)
-            put(Events.ACCESS_LEVEL, mapAccessLevel(event.rawProperties["CLASS"]))
+            put(Events.ACCESS_LEVEL, mapAccessLevel(event.classification))
         }
     }
 
     /**
-     * Map iCal CLASS property value to CalendarContract ACCESS_LEVEL.
+     * Map Classification enum to CalendarContract ACCESS_LEVEL.
      *
-     * | iCal CLASS    | ACCESS_LEVEL          |
-     * |---------------|------------------------|
-     * | PUBLIC        | ACCESS_PUBLIC (200)    |
-     * | PRIVATE       | ACCESS_PRIVATE (100)   |
-     * | CONFIDENTIAL  | ACCESS_CONFIDENTIAL (300) |
-     * | null/other    | ACCESS_DEFAULT (0)     |
+     * | Classification | ACCESS_LEVEL              |
+     * |----------------|---------------------------|
+     * | PUBLIC         | ACCESS_PUBLIC (200)       |
+     * | PRIVATE        | ACCESS_PRIVATE (100)      |
+     * | CONFIDENTIAL   | ACCESS_CONFIDENTIAL (300) |
+     * | null           | ACCESS_DEFAULT (0)        |
      */
-    internal fun mapAccessLevel(classValue: String?): Int {
-        return when (classValue?.uppercase()) {
-            "PUBLIC" -> Events.ACCESS_PUBLIC
-            "PRIVATE" -> Events.ACCESS_PRIVATE
-            "CONFIDENTIAL" -> Events.ACCESS_CONFIDENTIAL
-            else -> Events.ACCESS_DEFAULT
+    internal fun mapAccessLevel(classification: Classification?): Int {
+        return when (classification) {
+            Classification.PUBLIC -> Events.ACCESS_PUBLIC
+            Classification.PRIVATE -> Events.ACCESS_PRIVATE
+            Classification.CONFIDENTIAL -> Events.ACCESS_CONFIDENTIAL
+            null -> Events.ACCESS_DEFAULT
         }
     }
 
     /**
-     * Map CalendarContract ACCESS_LEVEL back to iCal CLASS property value.
+     * Map CalendarContract ACCESS_LEVEL back to Classification enum.
      *
-     * @return CLASS value string, or null for ACCESS_DEFAULT (no CLASS property)
+     * @return Classification enum value, or null for ACCESS_DEFAULT
      */
-    internal fun mapClassificationString(accessLevel: Int): String? {
+    internal fun mapClassification(accessLevel: Int): Classification? {
         return when (accessLevel) {
-            Events.ACCESS_PUBLIC -> "PUBLIC"
-            Events.ACCESS_PRIVATE -> "PRIVATE"
-            Events.ACCESS_CONFIDENTIAL -> "CONFIDENTIAL"
+            Events.ACCESS_PUBLIC -> Classification.PUBLIC
+            Events.ACCESS_PRIVATE -> Classification.PRIVATE
+            Events.ACCESS_CONFIDENTIAL -> Classification.CONFIDENTIAL
             else -> null // ACCESS_DEFAULT means no CLASS property
         }
     }
@@ -340,6 +345,16 @@ object CalendarContractMapper {
             }
         } ?: emptyList()
 
+        // Parse RDATE
+        val rdateStr = cursor.getStringOrNull(Events.RDATE)
+        val rdates = rdateStr?.split(",")?.mapNotNull { dateStr ->
+            try {
+                ICalDateTime.parse(dateStr.trim(), timezone?.id)
+            } catch (e: Exception) {
+                null
+            }
+        } ?: emptyList()
+
         // Map status
         val status = when (cursor.getIntOrNull(Events.STATUS)) {
             Events.STATUS_TENTATIVE -> EventStatus.TENTATIVE
@@ -372,12 +387,9 @@ object CalendarContractMapper {
         // Parse color
         val color = cursor.getStringOrNull(Events.SYNC_DATA4)
 
-        // Parse ACCESS_LEVEL and convert to CLASS property for round-trip
+        // Parse ACCESS_LEVEL and convert to Classification enum
         val accessLevel = cursor.getIntOrDefault(Events.ACCESS_LEVEL, Events.ACCESS_DEFAULT)
-        val classValue = mapClassificationString(accessLevel)
-        val rawProperties = buildMap {
-            classValue?.let { put("CLASS", it) }
-        }
+        val classification = mapClassification(accessLevel)
 
         return ICalEvent(
             uid = syncId,
@@ -393,6 +405,8 @@ object CalendarContractMapper {
             sequence = sequence,
             rrule = rrule,
             exdates = exdates,
+            rdates = rdates,
+            classification = classification,
             recurrenceId = recurrenceId,
             alarms = emptyList(), // Alarms are in separate table
             categories = emptyList(),
@@ -404,7 +418,7 @@ object CalendarContractMapper {
             created = null,
             transparency = transparency,
             url = cursor.getStringOrNull(Events.CUSTOM_APP_URI),
-            rawProperties = rawProperties
+            rawProperties = emptyMap()
         )
     }
 }

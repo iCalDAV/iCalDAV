@@ -7,7 +7,7 @@ Android CalendarContract mapper for iCalDAV - bridges RFC 5545 events to Android
 - Map `ICalEvent` to Android's `CalendarContract.Events` table
 - Map `ICalAlarm` to `CalendarContract.Reminders` table
 - Map `Attendee` and `Organizer` to `CalendarContract.Attendees` table
-- Handle recurring events (RRULE, EXDATE, DURATION)
+- Handle recurring events (RRULE, RDATE, EXDATE, DURATION)
 - Handle exception events (RECURRENCE-ID)
 - Sync adapter URI helpers for `CALLER_IS_SYNCADAPTER` operations
 - Optional integration with `icaldav-sync` for full sync capabilities
@@ -17,10 +17,10 @@ Android CalendarContract mapper for iCalDAV - bridges RFC 5545 events to Android
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("org.onekash:icaldav-android:2.2.0")
+    implementation("org.onekash:icaldav-android:2.6.2")
 
     // Optional: Full sync support
-    implementation("org.onekash:icaldav-sync:2.2.0")
+    implementation("org.onekash:icaldav-sync:2.6.2")
 }
 ```
 
@@ -180,6 +180,36 @@ Exception events (modified occurrences) are mapped to:
 
 Excluded dates are stored as comma-separated iCalendar date-time strings.
 
+### RDATE
+
+Additional recurrence dates are stored as comma-separated iCalendar date-time strings in the `Events.RDATE` column. Combined with RRULE and EXDATE, the mapper implements the full RFC 5545 recurrence formula:
+
+```
+RecurrenceSet = (DTSTART ∪ RRULE ∪ RDATE) - EXDATE
+```
+
+### CLASS (Access Classification)
+
+The `Classification` enum maps to Android's `ACCESS_LEVEL` constants:
+
+| Classification | ACCESS_LEVEL |
+|----------------|--------------|
+| `PUBLIC` | `ACCESS_PUBLIC` (200) |
+| `PRIVATE` | `ACCESS_PRIVATE` (100) |
+| `CONFIDENTIAL` | `ACCESS_CONFIDENTIAL` (300) |
+| `null` | `ACCESS_DEFAULT` (0) |
+
+```kotlin
+// ICalEvent to ContentValues
+val event = ICalEvent(..., classification = Classification.PRIVATE)
+val values = CalendarContractMapper.toContentValues(event, calendarId)
+// values[ACCESS_LEVEL] = 100
+
+// Cursor to ICalEvent
+val event = CalendarContractMapper.fromCursor(cursor)
+// event.classification = Classification.PRIVATE (if ACCESS_LEVEL was 100)
+```
+
 ### VALARM
 
 Alarms with `TRIGGER` durations are converted to Android's `MINUTES` field:
@@ -188,7 +218,6 @@ Alarms with `TRIGGER` durations are converted to Android's `MINUTES` field:
 
 ## Known Limitations
 
-- **RDATE**: Not supported (icaldav-core limitation)
 - **VTODO**: Not supported (VEVENT only)
 - **X-properties**: Not preserved (no ExtendedProperties mapping)
 - **VTIMEZONE**: Relies on IANA timezone IDs

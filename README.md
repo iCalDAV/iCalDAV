@@ -9,12 +9,18 @@ A Kotlin CalDAV client with offline sync and conflict resolution. Sync calendars
 
 ## Features
 
-- RFC 5545 compliant iCalendar parser and generator
-- CalDAV client with automatic server discovery
-- Recurring events (RRULE, EXDATE, RECURRENCE-ID)
+### iCalendar (RFC 5545)
+- Complete VEVENT, VTODO, and VJOURNAL parsing and generation
+- Recurring events (RRULE, RDATE, EXDATE, RECURRENCE-ID)
+- Access classification (CLASS property: PUBLIC, PRIVATE, CONFIDENTIAL)
 - All-day and multi-day event support
-- Timezone handling with VTIMEZONE
+- Timezone handling with VTIMEZONE and timezone distribution service
 - Alarms (VALARM) with DISPLAY, EMAIL, and AUDIO actions
+
+### CalDAV Protocol
+- CalDAV client with automatic server discovery
+- WebDAV ACL support (RFC 3744) - read and modify access control
+- CalDAV Scheduling (RFC 6638) with iTIP message building
 - Sync engine with offline support and conflict resolution
 - Provider quirks handling (iCloud, Nextcloud, Radicale, Baikal)
 
@@ -23,13 +29,13 @@ A Kotlin CalDAV client with offline sync and conflict resolution. Sync calendars
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("org.onekash:icaldav-client:2.2.0")
+    implementation("org.onekash:icaldav-client:2.6.2")
 
     // Optional: Sync engine with offline support
-    implementation("org.onekash:icaldav-sync:2.2.0")
+    implementation("org.onekash:icaldav-sync:2.6.2")
 
     // Optional: Android CalendarContract mapper (API 21+)
-    implementation("org.onekash:icaldav-android:2.2.0")
+    implementation("org.onekash:icaldav-android:2.6.2")
 }
 ```
 

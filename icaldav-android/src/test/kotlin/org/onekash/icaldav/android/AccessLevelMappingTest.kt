@@ -21,59 +21,59 @@ import java.util.UUID
 @Config(sdk = [Build.VERSION_CODES.UPSIDE_DOWN_CAKE])
 class AccessLevelMappingTest {
 
-    // ==================== CLASS → ACCESS_LEVEL Tests ====================
+    // ==================== Classification → ACCESS_LEVEL Tests ====================
 
     @Test
     fun `CLASS PUBLIC maps to ACCESS_PUBLIC`() {
-        val event = createTestEvent(rawProperties = mapOf("CLASS" to "PUBLIC"))
+        val event = createTestEvent(classification = Classification.PUBLIC)
         val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
         assertThat(values.getAsInteger(Events.ACCESS_LEVEL)).isEqualTo(Events.ACCESS_PUBLIC)
     }
 
     @Test
     fun `CLASS PRIVATE maps to ACCESS_PRIVATE`() {
-        val event = createTestEvent(rawProperties = mapOf("CLASS" to "PRIVATE"))
+        val event = createTestEvent(classification = Classification.PRIVATE)
         val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
         assertThat(values.getAsInteger(Events.ACCESS_LEVEL)).isEqualTo(Events.ACCESS_PRIVATE)
     }
 
     @Test
     fun `CLASS CONFIDENTIAL maps to ACCESS_CONFIDENTIAL`() {
-        val event = createTestEvent(rawProperties = mapOf("CLASS" to "CONFIDENTIAL"))
+        val event = createTestEvent(classification = Classification.CONFIDENTIAL)
         val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
         assertThat(values.getAsInteger(Events.ACCESS_LEVEL)).isEqualTo(Events.ACCESS_CONFIDENTIAL)
     }
 
     @Test
     fun `missing CLASS maps to ACCESS_DEFAULT`() {
-        val event = createTestEvent(rawProperties = emptyMap())
+        val event = createTestEvent(classification = null)
         val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
         assertThat(values.getAsInteger(Events.ACCESS_LEVEL)).isEqualTo(Events.ACCESS_DEFAULT)
     }
 
-    // ==================== ACCESS_LEVEL → CLASS Tests (mapClassificationString) ====================
+    // ==================== ACCESS_LEVEL → Classification Tests ====================
 
     @Test
-    fun `ACCESS_PUBLIC maps to CLASS PUBLIC`() {
-        val result = CalendarContractMapper.mapClassificationString(Events.ACCESS_PUBLIC)
-        assertThat(result).isEqualTo("PUBLIC")
+    fun `ACCESS_PUBLIC maps to Classification PUBLIC`() {
+        val result = CalendarContractMapper.mapClassification(Events.ACCESS_PUBLIC)
+        assertThat(result).isEqualTo(Classification.PUBLIC)
     }
 
     @Test
-    fun `ACCESS_PRIVATE maps to CLASS PRIVATE`() {
-        val result = CalendarContractMapper.mapClassificationString(Events.ACCESS_PRIVATE)
-        assertThat(result).isEqualTo("PRIVATE")
+    fun `ACCESS_PRIVATE maps to Classification PRIVATE`() {
+        val result = CalendarContractMapper.mapClassification(Events.ACCESS_PRIVATE)
+        assertThat(result).isEqualTo(Classification.PRIVATE)
     }
 
     @Test
-    fun `ACCESS_CONFIDENTIAL maps to CLASS CONFIDENTIAL`() {
-        val result = CalendarContractMapper.mapClassificationString(Events.ACCESS_CONFIDENTIAL)
-        assertThat(result).isEqualTo("CONFIDENTIAL")
+    fun `ACCESS_CONFIDENTIAL maps to Classification CONFIDENTIAL`() {
+        val result = CalendarContractMapper.mapClassification(Events.ACCESS_CONFIDENTIAL)
+        assertThat(result).isEqualTo(Classification.CONFIDENTIAL)
     }
 
     @Test
-    fun `ACCESS_DEFAULT maps to null CLASS`() {
-        val result = CalendarContractMapper.mapClassificationString(Events.ACCESS_DEFAULT)
+    fun `ACCESS_DEFAULT maps to null Classification`() {
+        val result = CalendarContractMapper.mapClassification(Events.ACCESS_DEFAULT)
         assertThat(result).isNull()
     }
 
@@ -81,7 +81,7 @@ class AccessLevelMappingTest {
 
     private fun createTestEvent(
         uid: String = UUID.randomUUID().toString(),
-        rawProperties: Map<String, String> = emptyMap()
+        classification: Classification? = null
     ): ICalEvent {
         return ICalEvent(
             uid = uid,
@@ -97,6 +97,8 @@ class AccessLevelMappingTest {
             sequence = 0,
             rrule = null,
             exdates = emptyList(),
+            rdates = emptyList(),
+            classification = classification,
             recurrenceId = null,
             alarms = emptyList(),
             categories = emptyList(),
@@ -108,7 +110,7 @@ class AccessLevelMappingTest {
             created = null,
             transparency = Transparency.OPAQUE,
             url = null,
-            rawProperties = rawProperties
+            rawProperties = emptyMap()
         )
     }
 }

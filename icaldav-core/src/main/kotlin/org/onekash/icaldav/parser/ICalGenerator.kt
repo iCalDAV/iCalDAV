@@ -170,6 +170,11 @@ class ICalGenerator(
             appendDateTimeProperty("EXDATE", exdate)
         }
 
+        // RDATE list (RFC 5545 Section 3.8.5.2)
+        event.rdates.forEach { rdate ->
+            appendDateTimeProperty("RDATE", rdate)
+        }
+
         // Summary (title)
         event.summary?.let {
             appendFoldedLine("SUMMARY:${escapeICalText(it)}")
@@ -229,6 +234,11 @@ class ICalGenerator(
         // URL
         event.url?.let {
             appendLine("URL:$it")
+        }
+
+        // CLASS (RFC 5545 Section 3.8.1.3)
+        event.classification?.let {
+            appendLine("CLASS:${it.toICalString()}")
         }
 
         // Organizer (for scheduling)
@@ -540,6 +550,345 @@ class ICalGenerator(
         conference.language?.let { params.add("LANGUAGE=$it") }
 
         appendLine("CONFERENCE;${params.joinToString(";")}:${conference.uri}")
+    }
+
+    // ============ VTODO Generation ============
+
+    /**
+     * Generate iCal string for a single VTODO.
+     *
+     * @param todo The todo to generate
+     * @param method iTIP method (null = no METHOD line, for simple calendar storage)
+     * @param preserveDtstamp If true, use todo's DTSTAMP; if false, use current time
+     * @param includeVTimezone Include VTIMEZONE components for referenced timezones
+     * @return Complete VCALENDAR string
+     */
+    fun generate(
+        todo: ICalTodo,
+        method: ITipMethod? = null,
+        preserveDtstamp: Boolean = false,
+        includeVTimezone: Boolean = true
+    ): String {
+        return buildString {
+            // VCALENDAR header
+            appendLine("BEGIN:VCALENDAR")
+            appendLine("VERSION:2.0")
+            appendLine("PRODID:$prodId")
+            appendLine("CALSCALE:GREGORIAN")
+            method?.let { appendLine("METHOD:${it.value}") }
+
+            // VTIMEZONE components (before VTODO per RFC 5545)
+            if (includeVTimezone) {
+                val tzids = collectTodoTimezones(todo)
+                tzids.forEach { tzid ->
+                    append(vtimezoneGenerator.generate(tzid))
+                }
+            }
+
+            // VTODO
+            appendVTodo(todo, preserveDtstamp)
+
+            appendLine("END:VCALENDAR")
+        }
+    }
+
+    /**
+     * Collect timezone IDs from a VTODO.
+     */
+    private fun collectTodoTimezones(todo: ICalTodo): Set<String> {
+        val tzids = mutableSetOf<String>()
+
+        listOfNotNull(
+            todo.dtStart,
+            todo.due,
+            todo.completed,
+            todo.recurrenceId
+        ).forEach { dt ->
+            if (!dt.isUtc && !dt.isDate && dt.timezone != null) {
+                val tzid = dt.timezone.id
+                if (tzid != "UTC" && tzid != "Z" && tzid != "Etc/UTC" && tzid != "GMT") {
+                    tzids.add(tzid)
+                }
+            }
+        }
+
+        return tzids
+    }
+
+    private fun StringBuilder.appendVTodo(todo: ICalTodo, preserveDtstamp: Boolean = false) {
+        appendLine("BEGIN:VTODO")
+
+        // Required properties
+        appendLine("UID:${todo.uid}")
+
+        // DTSTAMP handling
+        if (preserveDtstamp && todo.dtstamp != null) {
+            appendLine("DTSTAMP:${todo.dtstamp.toICalString()}")
+        } else {
+            appendLine("DTSTAMP:${formatDtStamp()}")
+        }
+
+        // DTSTART
+        todo.dtStart?.let { dt ->
+            appendDateTimeProperty("DTSTART", dt)
+        }
+
+        // DUE
+        todo.due?.let { due ->
+            appendDateTimeProperty("DUE", due)
+        }
+
+        // COMPLETED
+        todo.completed?.let { completed ->
+            // COMPLETED must be in UTC per RFC 5545
+            appendLine("COMPLETED:${completed.toICalString()}")
+        }
+
+        // RECURRENCE-ID for modified instances
+        todo.recurrenceId?.let { recid ->
+            appendDateTimeProperty("RECURRENCE-ID", recid)
+        }
+
+        // RRULE (only for master todos, NOT modified instances)
+        if (todo.recurrenceId == null) {
+            todo.rrule?.let { rrule ->
+                appendLine("RRULE:${rrule.toICalString()}")
+            }
+        }
+
+        // Summary (title)
+        todo.summary?.let {
+            appendFoldedLine("SUMMARY:${escapeICalText(it)}")
+        }
+
+        // Description
+        todo.description?.let {
+            appendFoldedLine("DESCRIPTION:${escapeICalText(it)}")
+        }
+
+        // Location
+        todo.location?.let {
+            appendFoldedLine("LOCATION:${escapeICalText(it)}")
+        }
+
+        // Status (required for proper sync)
+        appendLine("STATUS:${todo.status.toICalString()}")
+
+        // Sequence
+        appendLine("SEQUENCE:${todo.sequence}")
+
+        // Priority
+        if (todo.priority != 0) {
+            appendLine("PRIORITY:${todo.priority}")
+        }
+
+        // Percent complete
+        if (todo.percentComplete != 0) {
+            appendLine("PERCENT-COMPLETE:${todo.percentComplete}")
+        }
+
+        // Categories
+        if (todo.categories.isNotEmpty()) {
+            appendLine("CATEGORIES:${todo.categories.joinToString(",") { escapeICalText(it) }}")
+        }
+
+        // URL
+        todo.url?.let {
+            appendLine("URL:$it")
+        }
+
+        // GEO
+        todo.geo?.let {
+            appendLine("GEO:$it")
+        }
+
+        // CLASS
+        todo.classification?.let {
+            appendLine("CLASS:$it")
+        }
+
+        // Organizer (for task assignment)
+        todo.organizer?.let { org ->
+            appendLine(formatOrganizer(org))
+        }
+
+        // Attendees (assignees)
+        todo.attendees.forEach { att ->
+            appendLine(formatAttendee(att))
+        }
+
+        // VALARMs
+        todo.alarms.forEach { alarm ->
+            appendVAlarm(alarm)
+        }
+
+        // Created/Last-Modified
+        todo.created?.let {
+            appendLine("CREATED:${it.toICalString()}")
+        }
+        todo.lastModified?.let {
+            appendLine("LAST-MODIFIED:${it.toICalString()}")
+        }
+
+        // Raw properties for round-trip
+        todo.rawProperties.forEach { (key, value) ->
+            appendFoldedLine("$key:$value")
+        }
+
+        appendLine("END:VTODO")
+    }
+
+    // ============ VJOURNAL Generation ============
+
+    /**
+     * Generate iCal string for a single VJOURNAL.
+     *
+     * @param journal The journal to generate
+     * @param method iTIP method (null = no METHOD line, for simple calendar storage)
+     * @param preserveDtstamp If true, use journal's DTSTAMP; if false, use current time
+     * @param includeVTimezone Include VTIMEZONE components for referenced timezones
+     * @return Complete VCALENDAR string
+     */
+    fun generate(
+        journal: ICalJournal,
+        method: ITipMethod? = null,
+        preserveDtstamp: Boolean = false,
+        includeVTimezone: Boolean = true
+    ): String {
+        return buildString {
+            // VCALENDAR header
+            appendLine("BEGIN:VCALENDAR")
+            appendLine("VERSION:2.0")
+            appendLine("PRODID:$prodId")
+            appendLine("CALSCALE:GREGORIAN")
+            method?.let { appendLine("METHOD:${it.value}") }
+
+            // VTIMEZONE components (before VJOURNAL per RFC 5545)
+            if (includeVTimezone) {
+                val tzids = collectJournalTimezones(journal)
+                tzids.forEach { tzid ->
+                    append(vtimezoneGenerator.generate(tzid))
+                }
+            }
+
+            // VJOURNAL
+            appendVJournal(journal, preserveDtstamp)
+
+            appendLine("END:VCALENDAR")
+        }
+    }
+
+    /**
+     * Collect timezone IDs from a VJOURNAL.
+     */
+    private fun collectJournalTimezones(journal: ICalJournal): Set<String> {
+        val tzids = mutableSetOf<String>()
+
+        listOfNotNull(
+            journal.dtStart,
+            journal.recurrenceId
+        ).forEach { dt ->
+            if (!dt.isUtc && !dt.isDate && dt.timezone != null) {
+                val tzid = dt.timezone.id
+                if (tzid != "UTC" && tzid != "Z" && tzid != "Etc/UTC" && tzid != "GMT") {
+                    tzids.add(tzid)
+                }
+            }
+        }
+
+        return tzids
+    }
+
+    private fun StringBuilder.appendVJournal(journal: ICalJournal, preserveDtstamp: Boolean = false) {
+        appendLine("BEGIN:VJOURNAL")
+
+        // Required properties
+        appendLine("UID:${journal.uid}")
+
+        // DTSTAMP handling
+        if (preserveDtstamp && journal.dtstamp != null) {
+            appendLine("DTSTAMP:${journal.dtstamp.toICalString()}")
+        } else {
+            appendLine("DTSTAMP:${formatDtStamp()}")
+        }
+
+        // DTSTART
+        journal.dtStart?.let { dt ->
+            appendDateTimeProperty("DTSTART", dt)
+        }
+
+        // RECURRENCE-ID for modified instances
+        journal.recurrenceId?.let { recid ->
+            appendDateTimeProperty("RECURRENCE-ID", recid)
+        }
+
+        // RRULE (only for master journals, NOT modified instances)
+        if (journal.recurrenceId == null) {
+            journal.rrule?.let { rrule ->
+                appendLine("RRULE:${rrule.toICalString()}")
+            }
+        }
+
+        // Summary (title)
+        journal.summary?.let {
+            appendFoldedLine("SUMMARY:${escapeICalText(it)}")
+        }
+
+        // Description
+        journal.description?.let {
+            appendFoldedLine("DESCRIPTION:${escapeICalText(it)}")
+        }
+
+        // Status
+        appendLine("STATUS:${journal.status.toICalString()}")
+
+        // Sequence
+        appendLine("SEQUENCE:${journal.sequence}")
+
+        // Categories
+        if (journal.categories.isNotEmpty()) {
+            appendLine("CATEGORIES:${journal.categories.joinToString(",") { escapeICalText(it) }}")
+        }
+
+        // Attachments
+        journal.attachments.forEach { attach ->
+            appendLine("ATTACH:$attach")
+        }
+
+        // URL
+        journal.url?.let {
+            appendLine("URL:$it")
+        }
+
+        // CLASS
+        journal.classification?.let {
+            appendLine("CLASS:$it")
+        }
+
+        // Organizer
+        journal.organizer?.let { org ->
+            appendLine(formatOrganizer(org))
+        }
+
+        // Attendees
+        journal.attendees.forEach { att ->
+            appendLine(formatAttendee(att))
+        }
+
+        // Created/Last-Modified
+        journal.created?.let {
+            appendLine("CREATED:${it.toICalString()}")
+        }
+        journal.lastModified?.let {
+            appendLine("LAST-MODIFIED:${it.toICalString()}")
+        }
+
+        // Raw properties for round-trip
+        journal.rawProperties.forEach { (key, value) ->
+            appendFoldedLine("$key:$value")
+        }
+
+        appendLine("END:VJOURNAL")
     }
 
     companion object {

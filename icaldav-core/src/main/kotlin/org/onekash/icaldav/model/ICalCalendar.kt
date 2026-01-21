@@ -70,7 +70,10 @@ data class ICalCalendar(
     val events: List<ICalEvent> = emptyList(),
 
     /** All VTODO components in this calendar */
-    val todos: List<ICalTodo> = emptyList()
+    val todos: List<ICalTodo> = emptyList(),
+
+    /** All VJOURNAL components in this calendar */
+    val journals: List<ICalJournal> = emptyList()
 ) {
     /**
      * Get effective calendar name.
@@ -97,10 +100,15 @@ data class ICalCalendar(
     fun hasTodos(): Boolean = todos.isNotEmpty()
 
     /**
-     * Get the number of components (events + todos).
+     * Check if this calendar has any journals.
+     */
+    fun hasJournals(): Boolean = journals.isNotEmpty()
+
+    /**
+     * Get the number of components (events + todos + journals).
      */
     val componentCount: Int
-        get() = events.size + todos.size
+        get() = events.size + todos.size + journals.size
 
     companion object {
         /**
@@ -123,31 +131,135 @@ data class ICalCalendar(
 }
 
 /**
- * Placeholder for VTODO support.
- * TODO: Implement full VTodo model in future version.
+ * VTODO component representing a task per RFC 5545 Section 3.6.2.
+ *
+ * Supports task management including:
+ * - Basic properties: summary, description, due date, priority
+ * - Status tracking: NEEDS-ACTION, IN-PROCESS, COMPLETED, CANCELLED
+ * - Task assignment: organizer (assigner) and attendees (assignees)
+ * - Recurring tasks via RRULE
+ * - Due date reminders via VALARM
+ *
+ * All new properties have defaults for backward compatibility.
+ *
+ * @see <a href="https://tools.ietf.org/html/rfc5545#section-3.6.2">RFC 5545 Section 3.6.2 - To-Do Component</a>
  */
 data class ICalTodo(
-    /** Unique identifier from UID property */
+    /** Unique identifier from UID property (required) */
     val uid: String,
 
-    /** Task summary/title */
-    val summary: String?,
+    /** Task summary/title from SUMMARY property */
+    val summary: String? = null,
 
-    /** Task description */
-    val description: String?,
+    /** Task description from DESCRIPTION property */
+    val description: String? = null,
 
-    /** Due date */
-    val due: ICalDateTime?,
+    /** Due date from DUE property */
+    val due: ICalDateTime? = null,
 
-    /** Completion percentage (0-100) */
+    /** Completion percentage (0-100) from PERCENT-COMPLETE property */
     val percentComplete: Int = 0,
 
-    /** Task status: NEEDS-ACTION, IN-PROCESS, COMPLETED, CANCELLED */
+    /** Task status from STATUS property */
     val status: TodoStatus = TodoStatus.NEEDS_ACTION,
 
-    /** Priority (0=undefined, 1=highest, 9=lowest) */
-    val priority: Int = 0
-)
+    /** Priority (0=undefined, 1=highest, 9=lowest) from PRIORITY property */
+    val priority: Int = 0,
+
+    // ============ NEW properties (all with defaults) ============
+
+    /**
+     * Unique import ID for database storage.
+     * Format: "{uid}" or "{uid}:RECID:{datetime}" for modified instances.
+     */
+    val importId: String = "",
+
+    /** Start date/time from DTSTART property */
+    val dtStart: ICalDateTime? = null,
+
+    /** Completion date/time from COMPLETED property (RFC 5545) */
+    val completed: ICalDateTime? = null,
+
+    /** Sequence number for conflict detection from SEQUENCE property */
+    val sequence: Int = 0,
+
+    /** Creation timestamp from DTSTAMP property */
+    val dtstamp: ICalDateTime? = null,
+
+    /** Created timestamp from CREATED property */
+    val created: ICalDateTime? = null,
+
+    /** Last modified timestamp from LAST-MODIFIED property */
+    val lastModified: ICalDateTime? = null,
+
+    /** Task location from LOCATION property */
+    val location: String? = null,
+
+    /** Categories/tags from CATEGORIES property */
+    val categories: List<String> = emptyList(),
+
+    /** Task organizer/assigner from ORGANIZER property */
+    val organizer: Organizer? = null,
+
+    /** Task attendees/assignees from ATTENDEE properties */
+    val attendees: List<Attendee> = emptyList(),
+
+    /** Alarms/reminders from VALARM components */
+    val alarms: List<ICalAlarm> = emptyList(),
+
+    /** Recurrence rule from RRULE property (for recurring tasks) */
+    val rrule: RRule? = null,
+
+    /**
+     * RECURRENCE-ID for modified instances of recurring tasks.
+     * Non-null indicates this is a modified occurrence.
+     */
+    val recurrenceId: ICalDateTime? = null,
+
+    /** URL associated with the task from URL property */
+    val url: String? = null,
+
+    /** Geographic position from GEO property */
+    val geo: String? = null,
+
+    /** Class/access classification from CLASS property */
+    val classification: String? = null,
+
+    /** Preserve unknown properties for round-trip fidelity */
+    val rawProperties: Map<String, String> = emptyMap()
+) {
+    /**
+     * Generate importId for a todo.
+     */
+    companion object {
+        fun generateImportId(uid: String, recurrenceId: ICalDateTime?): String {
+            return if (recurrenceId != null) {
+                "$uid:RECID:${recurrenceId.toICalString()}"
+            } else {
+                uid
+            }
+        }
+    }
+
+    /**
+     * Check if this task is overdue.
+     */
+    fun isOverdue(): Boolean {
+        if (status == TodoStatus.COMPLETED || status == TodoStatus.CANCELLED) return false
+        val dueTime = due ?: return false
+        return dueTime.timestamp < System.currentTimeMillis()
+    }
+
+    /**
+     * Check if this is a recurring task.
+     */
+    fun isRecurring(): Boolean = rrule != null
+
+    /**
+     * Check if this is a modified instance of a recurring task.
+     */
+    fun isModifiedInstance(): Boolean = recurrenceId != null
+}
 
 /**
  * VTODO status values per RFC 5545.

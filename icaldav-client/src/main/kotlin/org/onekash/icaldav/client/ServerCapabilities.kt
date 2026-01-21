@@ -65,6 +65,19 @@ data class ServerCapabilities(
     val supportsMkcalendar: Boolean
         get() = allowedMethods.any { it.equals("MKCALENDAR", ignoreCase = true) }
 
+    /**
+     * Whether server supports WebDAV Access Control (RFC 3744).
+     * Indicated by "access-control" in DAV compliance classes.
+     */
+    val supportsAcl: Boolean
+        get() = davClasses.any { it.equals("access-control", ignoreCase = true) }
+
+    /**
+     * Whether ACL method is allowed (for modifying access control).
+     */
+    val supportsAclMethod: Boolean
+        get() = allowedMethods.any { it.equals("ACL", ignoreCase = true) }
+
     companion object {
         /**
          * Unknown capabilities (when OPTIONS fails or returns no useful info).

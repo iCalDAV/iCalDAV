@@ -117,6 +117,66 @@ object RequestBuilder {
     }
 
     /**
+     * CalDAV calendar-query REPORT for fetching VTODOs in a time range.
+     *
+     * Uses VTODO component filter. Time range filters on DUE property.
+     *
+     * @param start ISO 8601 timestamp for range start (e.g., "20231201T000000Z")
+     * @param end ISO 8601 timestamp for range end (e.g., "20241231T235959Z")
+     * @return XML request body
+     */
+    fun todoQuery(start: String? = null, end: String? = null): String {
+        val timeRange = if (start != null && end != null) {
+            """<c:time-range start="$start" end="$end"/>"""
+        } else ""
+
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:getetag/>
+    <c:calendar-data/>
+  </d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="VTODO">
+        $timeRange
+      </c:comp-filter>
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>"""
+    }
+
+    /**
+     * CalDAV calendar-query REPORT for fetching VJOURNALs in a time range.
+     *
+     * Uses VJOURNAL component filter. Time range filters on DTSTART property.
+     *
+     * @param start ISO 8601 timestamp for range start (e.g., "20231201T000000Z")
+     * @param end ISO 8601 timestamp for range end (e.g., "20241231T235959Z")
+     * @return XML request body
+     */
+    fun journalQuery(start: String? = null, end: String? = null): String {
+        val timeRange = if (start != null && end != null) {
+            """<c:time-range start="$start" end="$end"/>"""
+        } else ""
+
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:getetag/>
+    <c:calendar-data/>
+  </d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="VJOURNAL">
+        $timeRange
+      </c:comp-filter>
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>"""
+    }
+
+    /**
      * CalDAV calendar-query REPORT for fetching only ETags (no calendar-data).
      *
      * Used for lightweight sync when comparing etags to detect changes.
@@ -255,5 +315,122 @@ object RequestBuilder {
     <C:schedule-outbox-URL/>
   </D:prop>
 </D:propfind>"""
+    }
+
+    // ============ ACL Operations (RFC 3744) ============
+
+    /**
+     * PROPFIND request for ACL and current-user-privilege-set.
+     *
+     * @return XML request body
+     */
+    fun propfindAcl(): String {
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:acl/>
+    <D:current-user-privilege-set/>
+  </D:prop>
+</D:propfind>"""
+    }
+
+    /**
+     * PROPFIND request for current-user-privilege-set only.
+     *
+     * Use this for lightweight permission checks.
+     *
+     * @return XML request body
+     */
+    fun propfindCurrentUserPrivilegeSet(): String {
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:current-user-privilege-set/>
+  </D:prop>
+</D:propfind>"""
+    }
+
+    /**
+     * PROPFIND request for principal-collection-set.
+     *
+     * Used to discover where principals (users/groups) are stored.
+     *
+     * @return XML request body
+     */
+    fun propfindPrincipalCollectionSet(): String {
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:principal-collection-set/>
+  </D:prop>
+</D:propfind>"""
+    }
+
+    /**
+     * ACL request to modify access control list per RFC 3744 Section 8.1.
+     *
+     * @param aces List of ACEs to set on the resource
+     * @return XML request body for ACL method
+     */
+    fun acl(aces: List<org.onekash.icaldav.model.Ace>): String {
+        val aceElements = aces.joinToString("\n") { ace ->
+            buildAceElement(ace)
+        }
+
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<D:acl xmlns:D="DAV:">
+$aceElements
+</D:acl>"""
+    }
+
+    /**
+     * Build a single ACE element for ACL request.
+     */
+    private fun buildAceElement(ace: org.onekash.icaldav.model.Ace): String {
+        val principalElement = buildPrincipalElement(ace.principal)
+
+        val grantElements = if (ace.grant.isNotEmpty()) {
+            val privElements = ace.grant.joinToString("\n") { priv ->
+                "        <D:privilege><D:${priv.davName}/></D:privilege>"
+            }
+            """    <D:grant>
+$privElements
+    </D:grant>"""
+        } else ""
+
+        val denyElements = if (ace.deny.isNotEmpty()) {
+            val privElements = ace.deny.joinToString("\n") { priv ->
+                "        <D:privilege><D:${priv.davName}/></D:privilege>"
+            }
+            """    <D:deny>
+$privElements
+    </D:deny>"""
+        } else ""
+
+        return """  <D:ace>
+    $principalElement
+$grantElements
+$denyElements
+  </D:ace>"""
+    }
+
+    /**
+     * Build principal element for ACE.
+     */
+    private fun buildPrincipalElement(principal: org.onekash.icaldav.model.Principal): String {
+        return when (principal) {
+            is org.onekash.icaldav.model.Principal.Href ->
+                "<D:principal><D:href>${principal.url}</D:href></D:principal>"
+            is org.onekash.icaldav.model.Principal.All ->
+                "<D:principal><D:all/></D:principal>"
+            is org.onekash.icaldav.model.Principal.Authenticated ->
+                "<D:principal><D:authenticated/></D:principal>"
+            is org.onekash.icaldav.model.Principal.Unauthenticated ->
+                "<D:principal><D:unauthenticated/></D:principal>"
+            is org.onekash.icaldav.model.Principal.Self ->
+                "<D:principal><D:self/></D:principal>"
+            is org.onekash.icaldav.model.Principal.Property ->
+                "<D:principal><D:property><D:${principal.propertyName}/></D:property></D:principal>"
+        }
     }
 }

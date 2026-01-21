@@ -369,6 +369,38 @@ class WebDavClient(
     }
 
     /**
+     * Perform ACL request to modify access control list per RFC 3744 Section 8.1.
+     *
+     * HTTP Details:
+     * - Method: ACL (custom WebDAV method)
+     * - Content-Type: application/xml; charset=utf-8
+     * - Request body: <d:acl> element with <d:ace> children
+     * - Success: 200 OK
+     * - Errors: 403 Forbidden, 409 Conflict (protected ACE)
+     *
+     * @param url Resource URL to modify ACL for
+     * @param body XML request body (from RequestBuilder.acl())
+     * @return Success or error
+     */
+    fun acl(url: String, body: String): DavResult<Unit> {
+        val request = Request.Builder()
+            .url(url)
+            .method("ACL", body.toRequestBody(xmlMediaType))
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .applyAuth()
+            .build()
+
+        return executeWithRetry(request) { response ->
+            when {
+                response.isSuccessful -> DavResult.success(Unit)
+                response.code == 403 -> DavResult.httpError(403, "ACL modification forbidden")
+                response.code == 409 -> DavResult.httpError(409, "Protected ACE conflict")
+                else -> DavResult.httpError(response.code, response.message)
+            }
+        }
+    }
+
+    /**
      * Perform POST request for CalDAV scheduling (RFC 6638).
      *
      * Used to send iTIP messages to the schedule-outbox for delivery

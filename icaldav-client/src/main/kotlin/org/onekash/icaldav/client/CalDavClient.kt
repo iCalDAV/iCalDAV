@@ -508,6 +508,396 @@ class CalDavClient(
         return formatter.format(instant.atZone(ZoneOffset.UTC))
     }
 
+    // ============ VTODO Operations ============
+
+    /**
+     * Fetch all todos from a calendar within a time range.
+     *
+     * @param calendarUrl Calendar collection URL
+     * @param start Start of time range (filters by DUE property)
+     * @param end End of time range
+     * @return List of parsed todos
+     */
+    fun fetchTodos(
+        calendarUrl: String,
+        start: Instant? = null,
+        end: Instant? = null
+    ): DavResult<List<TodoWithMetadata>> {
+        val startStr = start?.let { formatICalTimestamp(it) }
+        val endStr = end?.let { formatICalTimestamp(it) }
+
+        val reportBody = RequestBuilder.todoQuery(startStr, endStr)
+
+        val result = webDavClient.report(calendarUrl, reportBody, DavDepth.ONE)
+
+        return result.map { multistatus ->
+            multistatus.responses.mapNotNull { response ->
+                response.calendarData?.let { icalData ->
+                    parseTodoResponse(response.href, icalData, response.etag)
+                }
+            }.flatten()
+        }
+    }
+
+    /**
+     * Create a new todo on the calendar.
+     *
+     * @param calendarUrl Calendar collection URL
+     * @param todo Todo to create
+     * @return Created todo URL and ETag
+     */
+    fun createTodo(
+        calendarUrl: String,
+        todo: ICalTodo
+    ): DavResult<TodoCreateResult> {
+        val todoUrl = buildEventUrl(calendarUrl, todo.uid)
+        val icalData = iCalGenerator.generate(todo)
+
+        val result = webDavClient.put(todoUrl, icalData, etag = null, ifNoneMatch = true)
+
+        return result.map { putResponse ->
+            TodoCreateResult(todoUrl, putResponse.etag)
+        }
+    }
+
+    /**
+     * Update an existing todo.
+     *
+     * @param todoUrl Full URL to the todo resource
+     * @param todo Updated todo data
+     * @param etag Current ETag for conflict detection
+     * @return New ETag after update
+     */
+    fun updateTodo(
+        todoUrl: String,
+        todo: ICalTodo,
+        etag: String? = null
+    ): DavResult<String?> {
+        val icalData = iCalGenerator.generate(todo)
+        val result = webDavClient.put(todoUrl, icalData, etag)
+
+        return result.map { putResponse ->
+            putResponse.etag
+        }
+    }
+
+    /**
+     * Delete a todo.
+     *
+     * @param todoUrl Full URL to the todo resource
+     * @param etag Current ETag for conflict detection
+     * @return Success or error
+     */
+    fun deleteTodo(
+        todoUrl: String,
+        etag: String? = null
+    ): DavResult<Unit> {
+        return webDavClient.delete(todoUrl, etag)
+    }
+
+    /**
+     * Fetch a single todo by URL.
+     *
+     * @param todoUrl Full URL to the todo resource
+     * @return Success with todo, or HttpError(404) if not found
+     */
+    fun getTodo(todoUrl: String): DavResult<TodoWithMetadata> {
+        val calendarUrl = todoUrl.substringBeforeLast('/')
+        val hrefs = listOf(todoUrl)
+        val reportBody = RequestBuilder.calendarMultiget(hrefs)
+        val result = webDavClient.report(calendarUrl, reportBody, DavDepth.ONE)
+
+        return result.map { multistatus ->
+            val response = multistatus.responses.firstOrNull()
+            val icalData = response?.calendarData
+            if (icalData != null) {
+                val todos = parseTodoResponse(response.href, icalData, response.etag)
+                todos.firstOrNull()
+            } else {
+                null
+            }
+        }.let { davResult ->
+            when (davResult) {
+                is DavResult.Success -> {
+                    davResult.value?.let { DavResult.success(it) }
+                        ?: DavResult.httpError(404, "Todo not found at $todoUrl")
+                }
+                is DavResult.HttpError -> davResult
+                is DavResult.NetworkError -> davResult
+                is DavResult.ParseError -> davResult
+            }
+        }
+    }
+
+    /**
+     * Parse iCal data from a response into todos.
+     */
+    private fun parseTodoResponse(
+        href: String,
+        icalData: String,
+        etag: String?
+    ): List<TodoWithMetadata> {
+        val parseResult = iCalParser.parseAllTodos(icalData)
+        val todos = parseResult.getOrNull() ?: return emptyList()
+
+        return todos.map { todo ->
+            TodoWithMetadata(
+                todo = todo,
+                href = href,
+                etag = etag,
+                rawIcal = icalData
+            )
+        }
+    }
+
+    // ============ VJOURNAL Operations ============
+
+    /**
+     * Fetch all journals from a calendar within a time range.
+     *
+     * @param calendarUrl Calendar collection URL
+     * @param start Start of time range (filters by DTSTART property)
+     * @param end End of time range
+     * @return List of parsed journals
+     */
+    fun fetchJournals(
+        calendarUrl: String,
+        start: Instant? = null,
+        end: Instant? = null
+    ): DavResult<List<JournalWithMetadata>> {
+        val startStr = start?.let { formatICalTimestamp(it) }
+        val endStr = end?.let { formatICalTimestamp(it) }
+
+        val reportBody = RequestBuilder.journalQuery(startStr, endStr)
+
+        val result = webDavClient.report(calendarUrl, reportBody, DavDepth.ONE)
+
+        return result.map { multistatus ->
+            multistatus.responses.mapNotNull { response ->
+                response.calendarData?.let { icalData ->
+                    parseJournalResponse(response.href, icalData, response.etag)
+                }
+            }.flatten()
+        }
+    }
+
+    /**
+     * Create a new journal on the calendar.
+     *
+     * @param calendarUrl Calendar collection URL
+     * @param journal Journal to create
+     * @return Created journal URL and ETag
+     */
+    fun createJournal(
+        calendarUrl: String,
+        journal: ICalJournal
+    ): DavResult<JournalCreateResult> {
+        val journalUrl = buildEventUrl(calendarUrl, journal.uid)
+        val icalData = iCalGenerator.generate(journal)
+
+        val result = webDavClient.put(journalUrl, icalData, etag = null, ifNoneMatch = true)
+
+        return result.map { putResponse ->
+            JournalCreateResult(journalUrl, putResponse.etag)
+        }
+    }
+
+    /**
+     * Update an existing journal.
+     *
+     * @param journalUrl Full URL to the journal resource
+     * @param journal Updated journal data
+     * @param etag Current ETag for conflict detection
+     * @return New ETag after update
+     */
+    fun updateJournal(
+        journalUrl: String,
+        journal: ICalJournal,
+        etag: String? = null
+    ): DavResult<String?> {
+        val icalData = iCalGenerator.generate(journal)
+        val result = webDavClient.put(journalUrl, icalData, etag)
+
+        return result.map { putResponse ->
+            putResponse.etag
+        }
+    }
+
+    /**
+     * Delete a journal.
+     *
+     * @param journalUrl Full URL to the journal resource
+     * @param etag Current ETag for conflict detection
+     * @return Success or error
+     */
+    fun deleteJournal(
+        journalUrl: String,
+        etag: String? = null
+    ): DavResult<Unit> {
+        return webDavClient.delete(journalUrl, etag)
+    }
+
+    /**
+     * Fetch a single journal by URL.
+     *
+     * @param journalUrl Full URL to the journal resource
+     * @return Success with journal, or HttpError(404) if not found
+     */
+    fun getJournal(journalUrl: String): DavResult<JournalWithMetadata> {
+        val calendarUrl = journalUrl.substringBeforeLast('/')
+        val hrefs = listOf(journalUrl)
+        val reportBody = RequestBuilder.calendarMultiget(hrefs)
+        val result = webDavClient.report(calendarUrl, reportBody, DavDepth.ONE)
+
+        return result.map { multistatus ->
+            val response = multistatus.responses.firstOrNull()
+            val icalData = response?.calendarData
+            if (icalData != null) {
+                val journals = parseJournalResponse(response.href, icalData, response.etag)
+                journals.firstOrNull()
+            } else {
+                null
+            }
+        }.let { davResult ->
+            when (davResult) {
+                is DavResult.Success -> {
+                    davResult.value?.let { DavResult.success(it) }
+                        ?: DavResult.httpError(404, "Journal not found at $journalUrl")
+                }
+                is DavResult.HttpError -> davResult
+                is DavResult.NetworkError -> davResult
+                is DavResult.ParseError -> davResult
+            }
+        }
+    }
+
+    /**
+     * Parse iCal data from a response into journals.
+     */
+    private fun parseJournalResponse(
+        href: String,
+        icalData: String,
+        etag: String?
+    ): List<JournalWithMetadata> {
+        val parseResult = iCalParser.parseAllJournals(icalData)
+        val journals = parseResult.getOrNull() ?: return emptyList()
+
+        return journals.map { journal ->
+            JournalWithMetadata(
+                journal = journal,
+                href = href,
+                etag = etag,
+                rawIcal = icalData
+            )
+        }
+    }
+
+    // ============ ACL Operations (RFC 3744) ============
+
+    /**
+     * Get the ACL (Access Control List) for a resource.
+     *
+     * @param resourceUrl URL of the resource to get ACL for
+     * @return ACL with list of ACEs
+     */
+    fun getAcl(resourceUrl: String): DavResult<Acl> {
+        val result = webDavClient.propfind(
+            url = resourceUrl,
+            body = RequestBuilder.propfindAcl(),
+            depth = DavDepth.ZERO
+        )
+
+        return result.map { multistatus ->
+            val props = multistatus.responses.firstOrNull()?.properties
+            val aclXml = props?.get("acl")
+            if (aclXml != null) {
+                org.onekash.icaldav.xml.AclParser.parseAcl(aclXml)
+            } else {
+                Acl(emptyList())
+            }
+        }
+    }
+
+    /**
+     * Set the ACL for a resource.
+     *
+     * Note: Not all ACEs may be modifiable. Protected ACEs (e.g., owner ACE)
+     * cannot be changed. Check ServerCapabilities.supportsAclMethod first.
+     *
+     * @param resourceUrl URL of the resource to set ACL for
+     * @param acl ACL to set
+     * @return Success or error
+     */
+    fun setAcl(resourceUrl: String, acl: Acl): DavResult<Unit> {
+        val body = RequestBuilder.acl(acl.aces)
+        return webDavClient.acl(resourceUrl, body)
+    }
+
+    /**
+     * Get the current user's privileges on a resource.
+     *
+     * This is a lightweight way to check permissions without fetching the full ACL.
+     * Use this to determine UI affordances (e.g., show/hide edit button).
+     *
+     * @param resourceUrl URL of the resource
+     * @return CurrentUserPrivilegeSet with the user's privileges
+     */
+    fun getCurrentUserPrivileges(resourceUrl: String): DavResult<CurrentUserPrivilegeSet> {
+        val result = webDavClient.propfind(
+            url = resourceUrl,
+            body = RequestBuilder.propfindCurrentUserPrivilegeSet(),
+            depth = DavDepth.ZERO
+        )
+
+        return result.map { multistatus ->
+            val props = multistatus.responses.firstOrNull()?.properties
+            val cupsXml = props?.get("current-user-privilege-set")
+            if (cupsXml != null) {
+                org.onekash.icaldav.xml.AclParser.parseCurrentUserPrivilegeSet(cupsXml)
+            } else {
+                CurrentUserPrivilegeSet.NONE
+            }
+        }
+    }
+
+    /**
+     * Share a calendar with another user.
+     *
+     * Convenience method that creates an ACE granting read or read/write access.
+     * This is a common operation for calendar sharing.
+     *
+     * Note: Requires server to support ACL method (check ServerCapabilities.supportsAclMethod).
+     * Some servers may require the user principal URL format specific to that server.
+     *
+     * @param calendarUrl URL of the calendar to share
+     * @param userPrincipal Principal URL of the user to share with
+     * @param canWrite If true, grants write access; if false, grants read-only access
+     * @return Success or error
+     */
+    fun shareCalendar(
+        calendarUrl: String,
+        userPrincipal: String,
+        canWrite: Boolean = false
+    ): DavResult<Unit> {
+        val privileges = if (canWrite) {
+            setOf(Privilege.READ, Privilege.WRITE)
+        } else {
+            setOf(Privilege.READ)
+        }
+
+        val ace = Ace(
+            principal = Principal.Href(userPrincipal),
+            grant = privileges
+        )
+
+        // Note: This replaces the entire ACL, which may not be desired.
+        // A more sophisticated implementation would first get the ACL,
+        // add/modify the ACE, then set the updated ACL.
+        // For now, this is a simplified implementation.
+        val body = RequestBuilder.acl(listOf(ace))
+        return webDavClient.acl(calendarUrl, body)
+    }
+
     // ============ Scheduling Operations (RFC 6638) ============
 
     /**
@@ -729,4 +1119,50 @@ data class SyncResult(
 data class EtagInfo(
     val href: String,
     val etag: String
+)
+
+/**
+ * Todo (VTODO) with server metadata.
+ *
+ * @property todo Parsed todo data
+ * @property href Todo resource URL
+ * @property etag ETag for conflict detection
+ * @property rawIcal Original iCalendar data as received from server
+ */
+data class TodoWithMetadata(
+    val todo: ICalTodo,
+    val href: String,
+    val etag: String?,
+    val rawIcal: String? = null
+)
+
+/**
+ * Result of todo creation.
+ */
+data class TodoCreateResult(
+    val href: String,
+    val etag: String?
+)
+
+/**
+ * Journal (VJOURNAL) with server metadata.
+ *
+ * @property journal Parsed journal data
+ * @property href Journal resource URL
+ * @property etag ETag for conflict detection
+ * @property rawIcal Original iCalendar data as received from server
+ */
+data class JournalWithMetadata(
+    val journal: ICalJournal,
+    val href: String,
+    val etag: String?,
+    val rawIcal: String? = null
+)
+
+/**
+ * Result of journal creation.
+ */
+data class JournalCreateResult(
+    val href: String,
+    val etag: String?
 )

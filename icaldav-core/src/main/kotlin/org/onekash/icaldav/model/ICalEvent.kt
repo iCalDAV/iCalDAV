@@ -54,6 +54,12 @@ data class ICalEvent(
     /** Exception dates from EXDATE property */
     val exdates: List<ICalDateTime>,
 
+    /** Additional recurrence dates from RDATE property (RFC 5545 §3.8.5.2) */
+    val rdates: List<ICalDateTime> = emptyList(),
+
+    /** Access classification from CLASS property (RFC 5545 §3.8.1.3) */
+    val classification: Classification? = null,
+
     /**
      * RECURRENCE-ID for modified instances of recurring events.
      * Non-null indicates this is a modified occurrence, not the master event.
@@ -143,9 +149,9 @@ data class ICalEvent(
     }
 
     /**
-     * Check if this event has recurrence (either RRULE or is a modified instance).
+     * Check if this event has recurrence (RRULE or RDATE).
      */
-    fun isRecurring(): Boolean = rrule != null
+    fun isRecurring(): Boolean = rrule != null || rdates.isNotEmpty()
 
     /**
      * Check if this is a modified instance of a recurring event.
@@ -226,6 +232,29 @@ enum class Transparency {
             return when (value?.uppercase()) {
                 "TRANSPARENT" -> TRANSPARENT
                 else -> OPAQUE
+            }
+        }
+    }
+}
+
+/**
+ * Access classification per RFC 5545 §3.8.1.3.
+ * Controls the visibility/sensitivity of calendar components.
+ */
+enum class Classification {
+    PUBLIC,       // Publicly visible
+    PRIVATE,      // Private to the owner
+    CONFIDENTIAL; // Confidential/restricted access
+
+    fun toICalString(): String = name
+
+    companion object {
+        fun fromString(value: String?): Classification? {
+            return when (value?.uppercase()) {
+                "PUBLIC" -> PUBLIC
+                "PRIVATE" -> PRIVATE
+                "CONFIDENTIAL" -> CONFIDENTIAL
+                else -> null
             }
         }
     }

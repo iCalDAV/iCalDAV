@@ -145,10 +145,9 @@ class ICalParserKashCalGapsTest {
         assertTrue(result is ParseResult.Success)
         val event = (result as ParseResult.Success).value.first()
 
-        // Check if CLASS is preserved in rawProperties or dedicated field
-        val classValue = event.rawProperties["CLASS"]
-        assertEquals("PUBLIC", classValue,
-            "CLASS:PUBLIC should be preserved in rawProperties")
+        // Check if CLASS is parsed into classification field
+        assertEquals(Classification.PUBLIC, event.classification,
+            "CLASS:PUBLIC should be parsed into classification field")
     }
 
     @Test
@@ -172,9 +171,8 @@ class ICalParserKashCalGapsTest {
         assertTrue(result is ParseResult.Success)
         val event = (result as ParseResult.Success).value.first()
 
-        val classValue = event.rawProperties["CLASS"]
-        assertEquals("PRIVATE", classValue,
-            "CLASS:PRIVATE should be preserved")
+        assertEquals(Classification.PRIVATE, event.classification,
+            "CLASS:PRIVATE should be parsed into classification field")
     }
 
     @Test
@@ -198,9 +196,8 @@ class ICalParserKashCalGapsTest {
         assertTrue(result is ParseResult.Success)
         val event = (result as ParseResult.Success).value.first()
 
-        val classValue = event.rawProperties["CLASS"]
-        assertEquals("CONFIDENTIAL", classValue,
-            "CLASS:CONFIDENTIAL should be preserved")
+        assertEquals(Classification.CONFIDENTIAL, event.classification,
+            "CLASS:CONFIDENTIAL should be parsed into classification field")
     }
 
     // ==================== 3. X-* Property Preservation ====================
@@ -588,8 +585,7 @@ class ICalParserKashCalGapsTest {
         assertTrue(reparsed is ParseResult.Success)
         val roundTrippedEvent = (reparsed as ParseResult.Success).value.first()
 
-        val classValue = roundTrippedEvent.rawProperties["CLASS"]
-        assertEquals("PRIVATE", classValue,
+        assertEquals(Classification.PRIVATE, roundTrippedEvent.classification,
             "CLASS:PRIVATE should survive round-trip")
     }
 }

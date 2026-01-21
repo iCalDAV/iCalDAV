@@ -170,14 +170,8 @@ object CalendarIntents {
             )
 
             // Add access level from CLASS if present
-            event.rawProperties["CLASS"]?.let { classValue ->
-                val accessLevel = when (classValue.uppercase()) {
-                    "PUBLIC" -> Events.ACCESS_PUBLIC
-                    "PRIVATE" -> Events.ACCESS_PRIVATE
-                    "CONFIDENTIAL" -> Events.ACCESS_CONFIDENTIAL
-                    else -> Events.ACCESS_DEFAULT
-                }
-                putExtra(Events.ACCESS_LEVEL, accessLevel)
+            event.classification?.let { classification ->
+                putExtra(Events.ACCESS_LEVEL, CalendarContractMapper.mapAccessLevel(classification))
             }
         }
     }

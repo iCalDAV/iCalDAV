@@ -17,6 +17,8 @@ import net.fortuna.ical4j.model.Property
 import net.fortuna.ical4j.model.component.VAlarm
 import net.fortuna.ical4j.model.component.VEvent
 import net.fortuna.ical4j.model.component.VFreeBusy
+import net.fortuna.ical4j.model.component.VToDo
+import net.fortuna.ical4j.model.component.VJournal
 import java.io.StringReader
 import java.time.Duration
 
@@ -104,6 +106,430 @@ class ICalParser {
     }
 
     /**
+     * Parse iCal string and return all VTODOs as ICalTodo objects.
+     *
+     * @param icalData Raw iCalendar string
+     * @return List of parsed todos, each with unique importId
+     */
+    fun parseAllTodos(icalData: String): ParseResult<List<ICalTodo>> {
+        return try {
+            val unfolded = unfoldICalData(icalData)
+            val builder = CalendarBuilder()
+            val calendar = builder.build(StringReader(unfolded))
+
+            val todos = calendar.getComponents<VToDo>(Component.VTODO)
+                .mapNotNull { vtodo ->
+                    parseVTodo(vtodo).getOrNull()
+                }
+
+            ParseResult.success(todos)
+        } catch (e: Exception) {
+            ParseResult.error("Failed to parse VTODO data: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Parse a single VTODO component to ICalTodo.
+     */
+    fun parseVTodo(vtodo: VToDo): ParseResult<ICalTodo> {
+        return try {
+            // Get UID - required property
+            val uidProp = vtodo.getPropertyOrNull<Property>("UID")
+                ?: return ParseResult.missingProperty("UID")
+            val uid = uidProp.value
+
+            // Parse RECURRENCE-ID if present (modified instance)
+            val recurrenceId = vtodo.getPropertyOrNull<Property>("RECURRENCE-ID")
+                ?.let { parseDateTimeFromProperty(it) }
+
+            // Generate unique importId
+            val importId = ICalTodo.generateImportId(uid, recurrenceId)
+
+            // Parse date/time properties
+            val dtStart = vtodo.getPropertyOrNull<Property>("DTSTART")
+                ?.let { parseDateTimeFromProperty(it) }
+            val due = vtodo.getPropertyOrNull<Property>("DUE")
+                ?.let { parseDateTimeFromProperty(it) }
+            val completed = vtodo.getPropertyOrNull<Property>("COMPLETED")
+                ?.let { parseDateTimeFromProperty(it) }
+            val dtstamp = vtodo.getPropertyOrNull<Property>("DTSTAMP")
+                ?.let { parseDateTimeFromProperty(it) }
+            val created = vtodo.getPropertyOrNull<Property>("CREATED")
+                ?.let { parseDateTimeFromProperty(it) }
+            val lastModified = vtodo.getPropertyOrNull<Property>("LAST-MODIFIED")
+                ?.let { parseDateTimeFromProperty(it) }
+
+            // Parse text properties
+            val summary = vtodo.getPropertyOrNull<Property>("SUMMARY")
+                ?.value?.let { unescapeICalText(it) }
+            val description = vtodo.getPropertyOrNull<Property>("DESCRIPTION")
+                ?.value?.let { unescapeICalText(it) }
+            val location = vtodo.getPropertyOrNull<Property>("LOCATION")
+                ?.value?.let { unescapeICalText(it) }
+            val url = vtodo.getPropertyOrNull<Property>("URL")?.value
+            val geo = vtodo.getPropertyOrNull<Property>("GEO")?.value
+            val classification = vtodo.getPropertyOrNull<Property>("CLASS")?.value
+
+            // Parse numeric properties
+            val statusValue = vtodo.getPropertyOrNull<Property>("STATUS")?.value
+            val sequenceValue = vtodo.getPropertyOrNull<Property>("SEQUENCE")
+                ?.value?.toIntOrNull() ?: 0
+            val priority = vtodo.getPropertyOrNull<Property>("PRIORITY")
+                ?.value?.toIntOrNull() ?: 0
+            val percentComplete = vtodo.getPropertyOrNull<Property>("PERCENT-COMPLETE")
+                ?.value?.toIntOrNull() ?: 0
+
+            // Parse RRULE (only for master todos, not modified instances)
+            val rrule = if (recurrenceId == null) {
+                vtodo.getPropertyOrNull<Property>("RRULE")
+                    ?.let { RRule.parse(it.value) }
+            } else null
+
+            // Parse categories
+            val categoriesProps = vtodo.getProperties<Property>("CATEGORIES")
+            val categories = categoriesProps.flatMap { cat ->
+                cat.value.split(",").map { it.trim() }
+            }
+
+            // Parse ORGANIZER
+            val organizer = parseTodoOrganizer(vtodo)
+
+            // Parse ATTENDEE list
+            val attendees = parseTodoAttendees(vtodo)
+
+            // Parse VALARMs
+            val alarms = vtodo.alarms.mapNotNull { valarm ->
+                parseVAlarm(valarm).getOrNull()
+            }
+
+            // Collect raw properties
+            val rawProperties = collectRawTodoProperties(vtodo)
+
+            val todo = ICalTodo(
+                uid = uid,
+                importId = importId,
+                summary = summary,
+                description = description,
+                due = due,
+                percentComplete = percentComplete,
+                status = TodoStatus.fromString(statusValue),
+                priority = priority,
+                dtStart = dtStart,
+                completed = completed,
+                sequence = sequenceValue,
+                dtstamp = dtstamp,
+                created = created,
+                lastModified = lastModified,
+                location = location,
+                categories = categories,
+                organizer = organizer,
+                attendees = attendees,
+                alarms = alarms,
+                rrule = rrule,
+                recurrenceId = recurrenceId,
+                url = url,
+                geo = geo,
+                classification = classification,
+                rawProperties = rawProperties
+            )
+
+            ParseResult.success(todo)
+        } catch (e: Exception) {
+            ParseResult.error("Failed to parse VTODO: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Parse ORGANIZER from VTODO.
+     */
+    private fun parseTodoOrganizer(vtodo: VToDo): Organizer? {
+        val organizerProp = vtodo.getPropertyOrNull<Property>("ORGANIZER")
+            ?: return null
+
+        val value = organizerProp.value
+        val email = extractEmailFromCalAddress(value)
+
+        val cn = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("CN")?.value
+        val sentBy = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SENT-BY")
+            ?.value?.let { extractEmailFromCalAddress(it) }
+
+        return Organizer(email = email, name = cn, sentBy = sentBy)
+    }
+
+    /**
+     * Parse ATTENDEE list from VTODO.
+     */
+    private fun parseTodoAttendees(vtodo: VToDo): List<Attendee> {
+        val attendeeProps = vtodo.getProperties<Property>("ATTENDEE")
+
+        return attendeeProps.mapNotNull { attendeeProp ->
+            val value = attendeeProp.value
+            val email = extractEmailFromCalAddress(value)
+            if (email.isBlank()) return@mapNotNull null
+
+            val cn = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("CN")?.value
+            val partStatValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("PARTSTAT")?.value
+            val roleValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("ROLE")?.value
+            val rsvpValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("RSVP")?.value
+
+            Attendee(
+                email = email,
+                name = cn,
+                partStat = PartStat.fromString(partStatValue),
+                role = AttendeeRole.fromString(roleValue),
+                rsvp = rsvpValue?.equals("TRUE", ignoreCase = true) ?: false
+            )
+        }
+    }
+
+    /**
+     * Properties explicitly handled for VTODO (should NOT be in rawProperties).
+     */
+    private val handledTodoProperties = setOf(
+        "UID", "DTSTART", "DUE", "COMPLETED", "DTSTAMP",
+        "RECURRENCE-ID", "RRULE",
+        "SUMMARY", "DESCRIPTION", "LOCATION",
+        "STATUS", "SEQUENCE", "PRIORITY", "PERCENT-COMPLETE",
+        "ORGANIZER", "ATTENDEE",
+        "LAST-MODIFIED", "CREATED",
+        "CATEGORIES", "URL", "GEO", "CLASS"
+    )
+
+    /**
+     * Collect unhandled properties from VTODO for round-trip fidelity.
+     */
+    private fun collectRawTodoProperties(vtodo: VToDo): Map<String, String> {
+        val raw = mutableMapOf<String, String>()
+
+        for (prop in vtodo.getAllProperties()) {
+            val propName = prop.name?.uppercase() ?: continue
+            if (propName in handledTodoProperties) continue
+            if (propName == "BEGIN" || propName == "END") continue
+
+            val paramList = prop.getParameters()
+            val key = if (paramList.isEmpty()) {
+                propName
+            } else {
+                val paramStr = paramList.joinToString(";") { param ->
+                    "${param.name}=${param.value}"
+                }
+                "$propName;$paramStr"
+            }
+
+            val value = prop.value
+            if (!value.isNullOrBlank()) {
+                raw[key] = value
+            }
+        }
+
+        return raw
+    }
+
+    // ============ VJOURNAL Parsing ============
+
+    /**
+     * Parse iCal string and return all VJOURNALs as ICalJournal objects.
+     *
+     * @param icalData Raw iCalendar string
+     * @return List of parsed journals, each with unique importId
+     */
+    fun parseAllJournals(icalData: String): ParseResult<List<ICalJournal>> {
+        return try {
+            val unfolded = unfoldICalData(icalData)
+            val builder = CalendarBuilder()
+            val calendar = builder.build(StringReader(unfolded))
+
+            val journals = calendar.getComponents<VJournal>(Component.VJOURNAL)
+                .mapNotNull { vjournal ->
+                    parseVJournal(vjournal).getOrNull()
+                }
+
+            ParseResult.success(journals)
+        } catch (e: Exception) {
+            ParseResult.error("Failed to parse VJOURNAL data: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Parse a single VJOURNAL component to ICalJournal.
+     */
+    fun parseVJournal(vjournal: VJournal): ParseResult<ICalJournal> {
+        return try {
+            // Get UID - required property
+            val uidProp = vjournal.getPropertyOrNull<Property>("UID")
+                ?: return ParseResult.missingProperty("UID")
+            val uid = uidProp.value
+
+            // Parse RECURRENCE-ID if present (modified instance)
+            val recurrenceId = vjournal.getPropertyOrNull<Property>("RECURRENCE-ID")
+                ?.let { parseDateTimeFromProperty(it) }
+
+            // Generate unique importId
+            val importId = ICalJournal.generateImportId(uid, recurrenceId)
+
+            // Parse date/time properties
+            val dtStart = vjournal.getPropertyOrNull<Property>("DTSTART")
+                ?.let { parseDateTimeFromProperty(it) }
+            val dtstamp = vjournal.getPropertyOrNull<Property>("DTSTAMP")
+                ?.let { parseDateTimeFromProperty(it) }
+            val created = vjournal.getPropertyOrNull<Property>("CREATED")
+                ?.let { parseDateTimeFromProperty(it) }
+            val lastModified = vjournal.getPropertyOrNull<Property>("LAST-MODIFIED")
+                ?.let { parseDateTimeFromProperty(it) }
+
+            // Parse text properties
+            val summary = vjournal.getPropertyOrNull<Property>("SUMMARY")
+                ?.value?.let { unescapeICalText(it) }
+            val description = vjournal.getPropertyOrNull<Property>("DESCRIPTION")
+                ?.value?.let { unescapeICalText(it) }
+            val url = vjournal.getPropertyOrNull<Property>("URL")?.value
+            val classification = vjournal.getPropertyOrNull<Property>("CLASS")?.value
+
+            // Parse numeric properties
+            val statusValue = vjournal.getPropertyOrNull<Property>("STATUS")?.value
+            val sequenceValue = vjournal.getPropertyOrNull<Property>("SEQUENCE")
+                ?.value?.toIntOrNull() ?: 0
+
+            // Parse RRULE (only for master journals, not modified instances)
+            val rrule = if (recurrenceId == null) {
+                vjournal.getPropertyOrNull<Property>("RRULE")
+                    ?.let { RRule.parse(it.value) }
+            } else null
+
+            // Parse categories
+            val categoriesProps = vjournal.getProperties<Property>("CATEGORIES")
+            val categories = categoriesProps.flatMap { cat ->
+                cat.value.split(",").map { it.trim() }
+            }
+
+            // Parse attachments
+            val attachmentProps = vjournal.getProperties<Property>("ATTACH")
+            val attachments = attachmentProps.mapNotNull { it.value }
+
+            // Parse ORGANIZER
+            val organizer = parseJournalOrganizer(vjournal)
+
+            // Parse ATTENDEE list
+            val attendees = parseJournalAttendees(vjournal)
+
+            // Collect raw properties
+            val rawProperties = collectRawJournalProperties(vjournal)
+
+            val journal = ICalJournal(
+                uid = uid,
+                importId = importId,
+                summary = summary,
+                description = description,
+                dtStart = dtStart,
+                status = JournalStatus.fromString(statusValue),
+                sequence = sequenceValue,
+                dtstamp = dtstamp,
+                created = created,
+                lastModified = lastModified,
+                categories = categories,
+                organizer = organizer,
+                attendees = attendees,
+                attachments = attachments,
+                rrule = rrule,
+                recurrenceId = recurrenceId,
+                url = url,
+                classification = classification,
+                rawProperties = rawProperties
+            )
+
+            ParseResult.success(journal)
+        } catch (e: Exception) {
+            ParseResult.error("Failed to parse VJOURNAL: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Parse ORGANIZER from VJOURNAL.
+     */
+    private fun parseJournalOrganizer(vjournal: VJournal): Organizer? {
+        val organizerProp = vjournal.getPropertyOrNull<Property>("ORGANIZER")
+            ?: return null
+
+        val value = organizerProp.value
+        val email = extractEmailFromCalAddress(value)
+
+        val cn = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("CN")?.value
+        val sentBy = organizerProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("SENT-BY")
+            ?.value?.let { extractEmailFromCalAddress(it) }
+
+        return Organizer(email = email, name = cn, sentBy = sentBy)
+    }
+
+    /**
+     * Parse ATTENDEE list from VJOURNAL.
+     */
+    private fun parseJournalAttendees(vjournal: VJournal): List<Attendee> {
+        val attendeeProps = vjournal.getProperties<Property>("ATTENDEE")
+
+        return attendeeProps.mapNotNull { attendeeProp ->
+            val value = attendeeProp.value
+            val email = extractEmailFromCalAddress(value)
+            if (email.isBlank()) return@mapNotNull null
+
+            val cn = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("CN")?.value
+            val partStatValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("PARTSTAT")?.value
+            val roleValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("ROLE")?.value
+            val rsvpValue = attendeeProp.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("RSVP")?.value
+
+            Attendee(
+                email = email,
+                name = cn,
+                partStat = PartStat.fromString(partStatValue),
+                role = AttendeeRole.fromString(roleValue),
+                rsvp = rsvpValue?.equals("TRUE", ignoreCase = true) ?: false
+            )
+        }
+    }
+
+    /**
+     * Properties explicitly handled for VJOURNAL (should NOT be in rawProperties).
+     */
+    private val handledJournalProperties = setOf(
+        "UID", "DTSTART", "DTSTAMP",
+        "RECURRENCE-ID", "RRULE",
+        "SUMMARY", "DESCRIPTION",
+        "STATUS", "SEQUENCE",
+        "ORGANIZER", "ATTENDEE",
+        "LAST-MODIFIED", "CREATED",
+        "CATEGORIES", "ATTACH", "URL", "CLASS"
+    )
+
+    /**
+     * Collect unhandled properties from VJOURNAL for round-trip fidelity.
+     */
+    private fun collectRawJournalProperties(vjournal: VJournal): Map<String, String> {
+        val raw = mutableMapOf<String, String>()
+
+        for (prop in vjournal.getAllProperties()) {
+            val propName = prop.name?.uppercase() ?: continue
+            if (propName in handledJournalProperties) continue
+            if (propName == "BEGIN" || propName == "END") continue
+
+            val paramList = prop.getParameters()
+            val key = if (paramList.isEmpty()) {
+                propName
+            } else {
+                val paramStr = paramList.joinToString(";") { param ->
+                    "${param.name}=${param.value}"
+                }
+                "$propName;$paramStr"
+            }
+
+            val value = prop.value
+            if (!value.isNullOrBlank()) {
+                raw[key] = value
+            }
+        }
+
+        return raw
+    }
+
+    /**
      * Parse result with METHOD and events.
      * Used for iTIP message processing where METHOD indicates the scheduling action.
      */
@@ -111,6 +537,76 @@ class ICalParser {
         val method: ITipMethod?,
         val events: List<ICalEvent>
     )
+
+    /**
+     * Parse complete iCalendar data into an ICalCalendar object.
+     *
+     * This method extracts all components (VEVENT, VTODO, VJOURNAL) and calendar-level
+     * properties (NAME, COLOR, etc.) from the iCalendar data.
+     *
+     * @param icalData Raw iCalendar string
+     * @return ICalCalendar containing all parsed components
+     */
+    fun parse(icalData: String): ParseResult<ICalCalendar> {
+        return try {
+            val unfolded = unfoldICalData(icalData)
+            val builder = CalendarBuilder()
+            val calendar = builder.build(StringReader(unfolded))
+
+            // Parse calendar-level properties
+            val prodId = calendar.getPropertyOrNull<Property>("PRODID")?.value
+            val version = calendar.getPropertyOrNull<Property>("VERSION")?.value ?: "2.0"
+            val calscale = calendar.getPropertyOrNull<Property>("CALSCALE")?.value ?: "GREGORIAN"
+            val method = calendar.getPropertyOrNull<Property>("METHOD")?.value
+            val name = calendar.getPropertyOrNull<Property>("NAME")?.value
+            val source = calendar.getPropertyOrNull<Property>("SOURCE")?.value
+            val color = calendar.getPropertyOrNull<Property>("COLOR")?.value
+            val xWrCalname = calendar.getPropertyOrNull<Property>("X-WR-CALNAME")?.value
+            val xAppleCalendarColor = calendar.getPropertyOrNull<Property>("X-APPLE-CALENDAR-COLOR")?.value
+
+            // Parse REFRESH-INTERVAL
+            val refreshInterval = calendar.getPropertyOrNull<Property>("REFRESH-INTERVAL")
+                ?.value?.let { ICalAlarm.parseDuration(it) }
+
+            // Parse all VEVENT components
+            val events = calendar.getComponents<VEvent>(Component.VEVENT)
+                .mapNotNull { vevent ->
+                    parseVEvent(vevent).getOrNull()
+                }
+
+            // Parse all VTODO components
+            val todos = calendar.getComponents<VToDo>(Component.VTODO)
+                .mapNotNull { vtodo ->
+                    parseVTodo(vtodo).getOrNull()
+                }
+
+            // Parse all VJOURNAL components
+            val journals = calendar.getComponents<VJournal>(Component.VJOURNAL)
+                .mapNotNull { vjournal ->
+                    parseVJournal(vjournal).getOrNull()
+                }
+
+            val icalCalendar = ICalCalendar(
+                prodId = prodId,
+                version = version,
+                calscale = calscale,
+                method = method,
+                name = name,
+                source = source,
+                color = color,
+                refreshInterval = refreshInterval,
+                xWrCalname = xWrCalname,
+                xAppleCalendarColor = xAppleCalendarColor,
+                events = events,
+                todos = todos,
+                journals = journals
+            )
+
+            ParseResult.success(icalCalendar)
+        } catch (e: Exception) {
+            ParseResult.error("Failed to parse iCalendar: ${e.message}", e)
+        }
+    }
 
     /**
      * Parse iCal string and return METHOD along with events.
@@ -191,6 +687,21 @@ class ICalParser {
                 }
             }
 
+            // Parse RDATE list (RFC 5545 Section 3.8.5.2)
+            val rdateProps = vevent.getProperties<Property>("RDATE")
+            val rdates = rdateProps.flatMap { rdate ->
+                val tzidParam = rdate.getParameterOrNull<net.fortuna.ical4j.model.parameter.TzId>("TZID")?.value
+                val valueParam = rdate.getParameterOrNull<net.fortuna.ical4j.model.Parameter>("VALUE")?.value
+                if (valueParam == "PERIOD") {
+                    emptyList()  // Skip PERIOD values (not commonly used)
+                } else {
+                    rdate.value.split(",").mapNotNull { dateStr ->
+                        try { ICalDateTime.parse(dateStr.trim(), tzidParam) }
+                        catch (e: Exception) { null }
+                    }
+                }
+            }
+
             // Parse VALARMs
             val alarms = vevent.alarms.mapNotNull { valarm ->
                 parseVAlarm(valarm).getOrNull()
@@ -217,6 +728,10 @@ class ICalParser {
                 ?.value
             val urlValue = vevent.getPropertyOrNull<Property>("URL")
                 ?.value
+
+            // Parse CLASS property (RFC 5545 Section 3.8.1.3)
+            val classValue = vevent.getPropertyOrNull<Property>("CLASS")?.value
+            val classification = Classification.fromString(classValue)
 
             // Parse COLOR property (RFC 7986)
             val color = vevent.getPropertyOrNull<Property>("COLOR")
@@ -261,7 +776,7 @@ class ICalParser {
                 ?.let { parseDateTimeFromProperty(it) }
 
             // Collect unknown/extra properties for round-trip fidelity
-            // This includes X-* vendor extensions, CLASS, and any other unhandled properties
+            // This includes X-* vendor extensions and any other unhandled properties
             val rawProperties = collectRawProperties(vevent)
 
             val event = ICalEvent(
@@ -278,6 +793,8 @@ class ICalParser {
                 sequence = sequenceValue,
                 rrule = rrule,
                 exdates = exdates,
+                rdates = rdates,
+                classification = classification,
                 recurrenceId = recurrenceId,
                 alarms = alarms,
                 categories = categories,
@@ -759,7 +1276,7 @@ class ICalParser {
         "UID", "DTSTART", "DTEND", "DURATION", "DTSTAMP",
         "RECURRENCE-ID", "RRULE", "EXDATE", "RDATE",
         "SUMMARY", "DESCRIPTION", "LOCATION",
-        "STATUS", "SEQUENCE", "TRANSP", "URL",
+        "STATUS", "SEQUENCE", "TRANSP", "URL", "CLASS",
         "COLOR", "IMAGE", "CONFERENCE",
         "LINK", "RELATED-TO",
         "ORGANIZER", "ATTENDEE",
@@ -773,7 +1290,6 @@ class ICalParser {
      *
      * This preserves:
      * - X-* vendor extensions (X-APPLE-STRUCTURED-LOCATION, X-GOOGLE-CONFERENCE, etc.)
-     * - CLASS property (PUBLIC, PRIVATE, CONFIDENTIAL)
      * - Any other RFC 5545 property not explicitly handled
      *
      * Properties with parameters are stored with parameters in the key:

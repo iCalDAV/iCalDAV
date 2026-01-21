@@ -106,6 +106,45 @@ class ITipBuilder(
     }
 
     /**
+     * Create an ADD message to add new instances to a recurring event.
+     *
+     * Per RFC 5546 Section 3.2.4:
+     * - ADD is used to add instances to a recurring event
+     * - The RECURRENCE-ID identifies the new instance(s) being added
+     * - SEQUENCE should match the master event
+     * - The new instance must have RECURRENCE-ID set
+     *
+     * @param masterEvent The master recurring event
+     * @param newInstance The new instance to add (must have RECURRENCE-ID set)
+     * @param attendees Attendees for the new instance
+     * @return ICS string with METHOD:ADD
+     * @throws IllegalArgumentException if newInstance.recurrenceId is null
+     */
+    fun createAdd(
+        masterEvent: ICalEvent,
+        newInstance: ICalEvent,
+        attendees: List<Attendee>
+    ): String {
+        require(newInstance.recurrenceId != null) {
+            "ADD method requires RECURRENCE-ID to identify the new instance"
+        }
+
+        val addEvent = newInstance.copy(
+            uid = masterEvent.uid,                // Preserve master UID
+            sequence = masterEvent.sequence,      // Preserve master SEQUENCE
+            recurrenceId = newInstance.recurrenceId,  // Required for ADD
+            rrule = null,                         // Instance should not have RRULE
+            attendees = attendees.map { attendee ->
+                attendee.copy(
+                    partStat = PartStat.NEEDS_ACTION,
+                    rsvp = true
+                )
+            }
+        )
+        return generator.generate(addEvent, ITipMethod.ADD, preserveDtstamp = true)
+    }
+
+    /**
      * Create a COUNTER message proposing alternative time.
      *
      * Per RFC 5546:

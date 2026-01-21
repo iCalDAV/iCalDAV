@@ -6,6 +6,8 @@ import net.fortuna.ical4j.model.Parameter
 import net.fortuna.ical4j.model.component.VEvent
 import net.fortuna.ical4j.model.component.VAlarm
 import net.fortuna.ical4j.model.component.VFreeBusy
+import net.fortuna.ical4j.model.component.VToDo
+import net.fortuna.ical4j.model.component.VJournal
 import net.fortuna.ical4j.model.WeekDay
 import java.time.DayOfWeek
 
@@ -41,6 +43,14 @@ inline fun <reified T : Property> VFreeBusy.getPropertyOrNull(name: String): T? 
     return getProperty<T>(name).orElse(null)
 }
 
+inline fun <reified T : Property> VToDo.getPropertyOrNull(name: String): T? {
+    return getProperty<T>(name).orElse(null)
+}
+
+inline fun <reified T : Property> VJournal.getPropertyOrNull(name: String): T? {
+    return getProperty<T>(name).orElse(null)
+}
+
 inline fun <reified T : Property> Calendar.getPropertyOrNull(name: String): T? {
     return getProperty<T>(name).orElse(null)
 }
@@ -50,6 +60,22 @@ inline fun <reified T : Property> Calendar.getPropertyOrNull(name: String): T? {
  * Returns a list that can be iterated over.
  */
 fun VEvent.getAllProperties(): List<Property> {
+    return getProperties<Property>().toList()
+}
+
+/**
+ * Get all properties from a VToDo.
+ * Returns a list that can be iterated over.
+ */
+fun VToDo.getAllProperties(): List<Property> {
+    return getProperties<Property>().toList()
+}
+
+/**
+ * Get all properties from a VJournal.
+ * Returns a list that can be iterated over.
+ */
+fun VJournal.getAllProperties(): List<Property> {
     return getProperties<Property>().toList()
 }
 

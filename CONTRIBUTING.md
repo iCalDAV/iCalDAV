@@ -71,7 +71,8 @@ cd iCalDAV
 iCalDAV/
 ├── icaldav-core/       # ICS parsing, generation, RRULE
 ├── icaldav-client/     # CalDAV/WebDAV client, discovery, ICS subscriptions
-└── icaldav-sync/       # Sync engine with offline support
+├── icaldav-sync/       # Sync engine with offline support
+└── icaldav-android/    # Android CalendarContract mapper
 ```
 
 ## Code Style

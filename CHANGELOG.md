@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2026-01-21
+
+### Added
+- **VTODO support** (RFC 5545 §3.6.2): Full task management
+  - `ICalTodo` model with summary, description, due date, priority, status
+  - Status tracking: NEEDS-ACTION, IN-PROCESS, COMPLETED, CANCELLED
+  - Recurring tasks via RRULE
+  - Complete parsing and generation
+- **VJOURNAL support** (RFC 5545 §3.6.3): Journal entries
+  - `ICalJournal` model for notes associated with calendar dates
+  - Status: DRAFT, FINAL, CANCELLED
+  - Complete parsing and generation
+- **WebDAV ACL support** (RFC 3744): Access control lists
+  - `Acl`, `Ace`, `Principal`, `Privilege` models
+  - `CurrentUserPrivilegeSet` for checking permissions
+  - Read and modify ACLs on calendars and events
+- **Timezone distribution service** (CalConnect TZURL)
+  - `TimezoneServiceClient` fetches VTIMEZONE definitions from tzurl.org
+  - In-memory caching with configurable TTL
+  - Automatic TZURL generation for IANA timezone IDs
+- **RDATE support** (RFC 5545 §3.8.5.2): Additional recurrence dates
+  - `ICalEvent.rdates: List<ICalDateTime>` field for additional occurrence dates
+  - `RRuleExpander` implements full recurrence formula: `RecurrenceSet = (DTSTART ∪ RRULE ∪ RDATE) - EXDATE`
+  - Android `CalendarContractMapper` maps RDATE to/from `Events.RDATE` column
+  - RDATE with TZID parameters supported
+  - VALUE=PERIOD format gracefully skipped (not commonly used)
+- **Classification enum** (RFC 5545 §3.8.1.3): Type-safe access classification
+  - `Classification` enum with `PUBLIC`, `PRIVATE`, `CONFIDENTIAL` values
+  - `ICalEvent.classification: Classification?` field replaces `rawProperties["CLASS"]`
+  - Android mapper converts to/from `Events.ACCESS_LEVEL` constants
+- **CalConnect specification compliance tests**: Comprehensive test suite validating RFC compliance
+
+### Changed
+- `ICalCalendar` now includes `todos: List<ICalTodo>` and `journals: List<ICalJournal>`
+- `ICalEvent.isRecurring()` now returns `true` for events with RDATE even without RRULE
+- CLASS property no longer stored in `rawProperties` - use `classification` field instead
+
+### Fixed
+- **Bug fix**: RDATE was listed in `handledProperties` but never parsed - now properly extracted
+
 ## [2.0.0] - 2026-01-17
 
 ### Breaking Changes

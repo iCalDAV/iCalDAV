@@ -13,8 +13,12 @@ import java.time.*
  * Expands recurring events into individual occurrences.
  *
  * Uses ical4j's Recur class for RFC 5545 compliant expansion,
- * with additional handling for:
+ * implementing the full recurrence formula:
+ * RecurrenceSet = (DTSTART ∪ RRULE ∪ RDATE) - EXDATE
+ *
+ * Additional handling for:
  * - EXDATE exclusions (deleted occurrences)
+ * - RDATE additions (extra occurrence dates)
  * - RECURRENCE-ID overrides (modified occurrences)
  * - Timezone-aware date matching
  */
@@ -23,7 +27,10 @@ class RRuleExpander {
     /**
      * Expand a recurring event into individual occurrences within a time range.
      *
-     * @param masterEvent The event with RRULE
+     * Implements RFC 5545 recurrence expansion:
+     * RecurrenceSet = (DTSTART ∪ RRULE ∪ RDATE) - EXDATE
+     *
+     * @param masterEvent The event with RRULE and/or RDATE
      * @param rangeStart Start of expansion range (inclusive)
      * @param rangeEnd End of expansion range (exclusive)
      * @param overrides Map of RECURRENCE-ID daycodes to modified ICalEvent
@@ -35,12 +42,14 @@ class RRuleExpander {
         rangeEnd: Instant,
         overrides: Map<String, ICalEvent> = emptyMap()
     ): List<ICalEvent> {
-        val rrule = masterEvent.rrule ?: return listOf(masterEvent)
+        val rrule = masterEvent.rrule
+
+        // If no RRULE and no RDATE, return single event
+        if (rrule == null && masterEvent.rdates.isEmpty()) {
+            return listOf(masterEvent)
+        }
 
         val occurrences = mutableListOf<ICalEvent>()
-
-        // Build ical4j Recur from our RRule
-        val recur = buildRecur(rrule)
 
         // Get the event's timezone for calculations
         val eventZone = masterEvent.dtStart.timezone ?: ZoneId.systemDefault()
@@ -48,82 +57,134 @@ class RRuleExpander {
         // Calculate event duration for creating occurrence end times
         val eventDuration = calculateDuration(masterEvent)
 
-        // Get start date for recurrence calculation
-        val eventStartZdt = masterEvent.dtStart.toZonedDateTime()
-
         // Build set of excluded day codes from EXDATE
         val excludedDayCodes = masterEvent.exdates.map { it.toDayCode() }.toSet()
 
-        // Also exclude any dates that have RECURRENCE-ID overrides
+        // Track day codes of RECURRENCE-ID overrides
         val overrideDayCodes = overrides.keys
 
-        // Generate occurrence dates using ical4j
-        // Use LocalDateTime for Recur<LocalDateTime>
-        val periodStart = ZonedDateTime.ofInstant(rangeStart, eventZone)
-        val periodEnd = ZonedDateTime.ofInstant(rangeEnd, eventZone)
+        // Track generated day codes to avoid duplicates between RRULE and RDATE
+        val generatedDayCodes = mutableSetOf<String>()
 
-        // Always use LocalDateTime - for all-day events, use midnight
-        val seed = if (masterEvent.isAllDay) {
-            eventStartZdt.toLocalDate().atStartOfDay()
-        } else {
-            eventStartZdt.toLocalDateTime()
-        }
+        // ========== RRULE Expansion ==========
+        if (rrule != null) {
+            // Build ical4j Recur from our RRule
+            val recur = buildRecur(rrule)
 
-        val rangeStartLdt = if (masterEvent.isAllDay) {
-            periodStart.toLocalDate().atStartOfDay()
-        } else {
-            periodStart.toLocalDateTime()
-        }
+            // Get start date for recurrence calculation
+            val eventStartZdt = masterEvent.dtStart.toZonedDateTime()
 
-        val rangeEndLdt = if (masterEvent.isAllDay) {
-            periodEnd.toLocalDate().atStartOfDay()
-        } else {
-            periodEnd.toLocalDateTime()
-        }
+            // Generate occurrence dates using ical4j
+            val periodStart = ZonedDateTime.ofInstant(rangeStart, eventZone)
+            val periodEnd = ZonedDateTime.ofInstant(rangeEnd, eventZone)
 
-        // ical4j 4.x: getDates accepts LocalDateTime, returns List<LocalDateTime>
-        val dates: List<LocalDateTime> = recur.getDates(seed, rangeStartLdt, rangeEndLdt)
-
-        for (date in dates) {
-            // ical4j 4.x: dates are already LocalDateTime
-            val occurrenceZdt = date.atZone(eventZone)
-
-            val occurrenceDayCode = "%04d%02d%02d".format(
-                occurrenceZdt.year,
-                occurrenceZdt.monthValue,
-                occurrenceZdt.dayOfMonth
-            )
-
-            // Skip if this date is in EXDATE
-            if (occurrenceDayCode in excludedDayCodes) {
-                continue
+            // Always use LocalDateTime - for all-day events, use midnight
+            val seed = if (masterEvent.isAllDay) {
+                eventStartZdt.toLocalDate().atStartOfDay()
+            } else {
+                eventStartZdt.toLocalDateTime()
             }
+
+            val rangeStartLdt = if (masterEvent.isAllDay) {
+                periodStart.toLocalDate().atStartOfDay()
+            } else {
+                periodStart.toLocalDateTime()
+            }
+
+            val rangeEndLdt = if (masterEvent.isAllDay) {
+                periodEnd.toLocalDate().atStartOfDay()
+            } else {
+                periodEnd.toLocalDateTime()
+            }
+
+            // ical4j 4.x: getDates accepts LocalDateTime, returns List<LocalDateTime>
+            val dates: List<LocalDateTime> = recur.getDates(seed, rangeStartLdt, rangeEndLdt)
+
+            for (date in dates) {
+                val occurrenceZdt = date.atZone(eventZone)
+                val occurrenceDayCode = "%04d%02d%02d".format(
+                    occurrenceZdt.year,
+                    occurrenceZdt.monthValue,
+                    occurrenceZdt.dayOfMonth
+                )
+
+                // Skip if excluded by EXDATE
+                if (occurrenceDayCode in excludedDayCodes) continue
+
+                // Track this day code as generated
+                generatedDayCodes.add(occurrenceDayCode)
+
+                // If there's an override for this date, use it instead
+                if (occurrenceDayCode in overrideDayCodes) {
+                    overrides[occurrenceDayCode]?.let { occurrences.add(it) }
+                    continue
+                }
+
+                // Create occurrence event with adjusted timestamps
+                val occurrenceStart = ICalDateTime.fromZonedDateTime(occurrenceZdt, masterEvent.isAllDay)
+                val occurrenceEnd = eventDuration?.let { dur ->
+                    ICalDateTime.fromTimestamp(
+                        occurrenceStart.timestamp + dur.toMillis(),
+                        occurrenceStart.timezone,
+                        masterEvent.isAllDay
+                    )
+                }
+
+                val occurrence = masterEvent.copy(
+                    importId = "${masterEvent.uid}:OCC:$occurrenceDayCode",
+                    dtStart = occurrenceStart,
+                    dtEnd = occurrenceEnd,
+                    rrule = null,
+                    exdates = emptyList(),
+                    rdates = emptyList(),
+                    recurrenceId = null
+                )
+
+                occurrences.add(occurrence)
+            }
+        }
+
+        // ========== RDATE Expansion ==========
+        // Add occurrences from RDATE that are within range, not excluded, and not duplicates
+        for (rdate in masterEvent.rdates) {
+            // Check if within range
+            if (rdate.timestamp < rangeStart.toEpochMilli() ||
+                rdate.timestamp >= rangeEnd.toEpochMilli()) continue
+
+            val rdateDayCode = rdate.toDayCode()
+
+            // Skip if excluded by EXDATE
+            if (rdateDayCode in excludedDayCodes) continue
+
+            // Skip if already generated by RRULE (avoid duplicates)
+            if (rdateDayCode in generatedDayCodes) continue
+
+            // Track this day code
+            generatedDayCodes.add(rdateDayCode)
 
             // If there's an override for this date, use it instead
-            if (occurrenceDayCode in overrideDayCodes) {
-                overrides[occurrenceDayCode]?.let { override ->
-                    occurrences.add(override)
-                }
+            if (rdateDayCode in overrideDayCodes) {
+                overrides[rdateDayCode]?.let { occurrences.add(it) }
                 continue
             }
 
-            // Create occurrence event with adjusted timestamps
-            val occurrenceStart = ICalDateTime.fromZonedDateTime(occurrenceZdt, masterEvent.isAllDay)
+            // Create occurrence from RDATE
             val occurrenceEnd = eventDuration?.let { dur ->
                 ICalDateTime.fromTimestamp(
-                    occurrenceStart.timestamp + dur.toMillis(),
-                    occurrenceStart.timezone,
+                    rdate.timestamp + dur.toMillis(),
+                    rdate.timezone,
                     masterEvent.isAllDay
                 )
             }
 
             val occurrence = masterEvent.copy(
-                importId = "${masterEvent.uid}:OCC:$occurrenceDayCode",
-                dtStart = occurrenceStart,
+                importId = "${masterEvent.uid}:OCC:$rdateDayCode",
+                dtStart = rdate,
                 dtEnd = occurrenceEnd,
-                rrule = null,  // Occurrences don't have RRULE
+                rrule = null,
                 exdates = emptyList(),
-                recurrenceId = null  // This is a generated occurrence, not a server-stored override
+                rdates = emptyList(),
+                recurrenceId = null
             )
 
             occurrences.add(occurrence)

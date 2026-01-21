@@ -2,6 +2,7 @@ package org.onekash.icaldav.parser
 
 import org.onekash.icaldav.model.ICalDateTime
 import org.onekash.icaldav.model.ICalEvent
+import org.onekash.icaldav.timezone.TimezoneServiceClient
 import java.time.*
 import java.time.zone.ZoneOffsetTransitionRule
 import java.util.Locale
@@ -17,15 +18,58 @@ import java.util.Locale
  * - DAYLIGHT component for DST periods (if applicable)
  * - RRULE for recurring transitions
  *
+ * Supports three generation strategies via [VTimezoneStrategy]:
+ * - INLINE: Full VTIMEZONE component (default, existing behavior)
+ * - TZURL_ONLY: Just TZURL reference to timezone service
+ * - BOTH: Full VTIMEZONE with TZURL property for authoritative source
+ *
  * Implementation notes:
  * - UTC timezones are skipped (no VTIMEZONE needed)
  * - Invalid timezone IDs return empty string
  * - Uses RRULE-based recurring transitions for DST rules
+ * - Constructor defaults preserve backward compatibility: `VTimezoneGenerator()` works as before
+ *
+ * @param timezoneService Optional service for fetching timezones (used for TZURL_ONLY strategy)
+ * @param strategy Generation strategy (defaults to INLINE for backward compatibility)
+ *
+ * @see <a href="https://www.calconnect.org/resources/tzurl">CalConnect TZURL Service</a>
  */
-class VTimezoneGenerator {
+class VTimezoneGenerator(
+    private val timezoneService: TimezoneServiceClient? = null,
+    private val strategy: VTimezoneStrategy = VTimezoneStrategy.INLINE
+) {
+
+    /**
+     * Strategy for VTIMEZONE generation.
+     */
+    enum class VTimezoneStrategy {
+        /**
+         * Generate full inline VTIMEZONE component (default, existing behavior).
+         * Most compatible with all calendar clients.
+         */
+        INLINE,
+
+        /**
+         * Generate only TZURL reference to timezone service.
+         * Smallest output but requires client to fetch timezone.
+         * Use only when you know the receiving client supports TZURL.
+         */
+        TZURL_ONLY,
+
+        /**
+         * Generate full VTIMEZONE with TZURL property for authoritative source.
+         * Best of both worlds: immediate compatibility + authoritative reference.
+         */
+        BOTH
+    }
 
     /**
      * Generate VTIMEZONE component for a single timezone ID.
+     *
+     * Uses the strategy configured in the constructor:
+     * - INLINE: Full VTIMEZONE component (default)
+     * - TZURL_ONLY: Just TZURL reference
+     * - BOTH: Full VTIMEZONE with TZURL property
      *
      * @param tzid The timezone ID (e.g., "America/New_York")
      * @return VTIMEZONE component string, or empty if invalid/UTC
@@ -36,9 +80,64 @@ class VTimezoneGenerator {
             return ""
         }
 
-        return buildString {
-            appendTimezone(this, tzid)
+        return when (strategy) {
+            VTimezoneStrategy.INLINE -> generateInline(tzid)
+            VTimezoneStrategy.TZURL_ONLY -> generateTzurlOnly(tzid)
+            VTimezoneStrategy.BOTH -> generateWithTzurl(tzid)
         }
+    }
+
+    /**
+     * Generate full inline VTIMEZONE component (existing behavior).
+     */
+    private fun generateInline(tzid: String): String {
+        return buildString {
+            appendTimezone(this, tzid, includeTzurl = false)
+        }
+    }
+
+    /**
+     * Generate VTIMEZONE with just TZURL reference.
+     *
+     * Smallest output but requires client to fetch timezone definition.
+     * Falls back to inline generation if timezone service is unavailable.
+     */
+    private fun generateTzurlOnly(tzid: String): String {
+        val tzurl = getTzurl(tzid)
+
+        return buildString {
+            try {
+                ZoneId.of(tzid) // Validate tzid exists
+
+                appendLine("BEGIN:VTIMEZONE")
+                appendLine("TZID:$tzid")
+                appendLine("TZURL:$tzurl")
+                appendLine("END:VTIMEZONE")
+            } catch (e: Exception) {
+                // Skip invalid timezone IDs
+            }
+        }
+    }
+
+    /**
+     * Generate full VTIMEZONE with TZURL property.
+     *
+     * Best of both worlds: immediate compatibility + authoritative reference.
+     */
+    private fun generateWithTzurl(tzid: String): String {
+        return buildString {
+            appendTimezone(this, tzid, includeTzurl = true)
+        }
+    }
+
+    /**
+     * Get the TZURL for a timezone ID.
+     *
+     * Uses the configured timezone service, or falls back to tzurl.org.
+     */
+    fun getTzurl(tzid: String): String {
+        return timezoneService?.getTzurl(tzid)
+            ?: "https://www.tzurl.org/zoneinfo/$tzid.ics"
     }
 
     /**
@@ -72,6 +171,7 @@ class VTimezoneGenerator {
             event.dtEnd?.let { collectFromDateTime(it, tzids) }
             event.recurrenceId?.let { collectFromDateTime(it, tzids) }
             event.exdates.forEach { collectFromDateTime(it, tzids) }
+            event.rdates.forEach { collectFromDateTime(it, tzids) }
         }
 
         return tzids
@@ -91,14 +191,23 @@ class VTimezoneGenerator {
 
     /**
      * Append VTIMEZONE component for a timezone ID.
+     *
+     * @param builder StringBuilder to append to
+     * @param tzid Timezone ID
+     * @param includeTzurl Whether to include TZURL property
      */
-    private fun appendTimezone(builder: StringBuilder, tzid: String) {
+    private fun appendTimezone(builder: StringBuilder, tzid: String, includeTzurl: Boolean = false) {
         try {
             val zoneId = ZoneId.of(tzid)
             val rules = zoneId.rules
 
             builder.appendLine("BEGIN:VTIMEZONE")
             builder.appendLine("TZID:$tzid")
+
+            // Add TZURL if requested
+            if (includeTzurl) {
+                builder.appendLine("TZURL:${getTzurl(tzid)}")
+            }
 
             // Get transition rules for repeating DST patterns
             val transitionRules = rules.transitionRules
