@@ -846,6 +846,78 @@ class RRuleEdgeCaseTest {
                 assertEquals(9, occInTokyo.hour)
             }
         }
+
+        @Test
+        fun `Asia Shanghai timezone preserves local time (ical4j issue 720)`() {
+            // ical4j issue #720: Embedded VTIMEZONE for Asia/Shanghai was incorrect
+            // China uses fixed UTC+8 with no DST since 1991
+            val shanghaiZone = ZoneId.of("Asia/Shanghai")
+            val startZdt = LocalDateTime.of(2024, 6, 15, 10, 30).atZone(shanghaiZone)
+
+            val event = createEvent(
+                dtStart = ICalDateTime.fromZonedDateTime(startZdt, false),
+                duration = Duration.ofHours(1),
+                rrule = RRule(freq = Frequency.WEEKLY, count = 4)
+            )
+
+            val range = TimeRange(
+                startZdt.toInstant(),
+                startZdt.plusWeeks(5).toInstant()
+            )
+
+            val occurrences = expander.expand(event, range)
+
+            assertEquals(4, occurrences.size)
+
+            // All occurrences should be at 10:30 in Shanghai (fixed UTC+8)
+            occurrences.forEach { occ ->
+                val occInShanghai = ZonedDateTime.ofInstant(
+                    Instant.ofEpochMilli(occ.dtStart.timestamp),
+                    shanghaiZone
+                )
+                assertEquals(10, occInShanghai.hour, "Hour should be 10 in Shanghai")
+                assertEquals(30, occInShanghai.minute, "Minute should be 30")
+            }
+        }
+
+        @Test
+        fun `Asia Shanghai daily recurrence maintains fixed UTC+8 offset`() {
+            // Verify no DST transitions affect Shanghai timezone
+            // China abolished DST in 1991 - should be fixed UTC+8 year-round
+            val shanghaiZone = ZoneId.of("Asia/Shanghai")
+
+            // Start in winter
+            val winterStart = LocalDateTime.of(2024, 1, 15, 8, 0).atZone(shanghaiZone)
+
+            val event = createEvent(
+                dtStart = ICalDateTime.fromZonedDateTime(winterStart, false),
+                duration = Duration.ofHours(1),
+                rrule = RRule(freq = Frequency.MONTHLY, count = 12)  // Full year
+            )
+
+            val range = TimeRange(
+                winterStart.toInstant(),
+                winterStart.plusYears(1).toInstant()
+            )
+
+            val occurrences = expander.expand(event, range)
+
+            assertEquals(12, occurrences.size)
+
+            // All occurrences should be at 8:00 Shanghai time (no DST shifts)
+            occurrences.forEach { occ ->
+                val occInShanghai = ZonedDateTime.ofInstant(
+                    Instant.ofEpochMilli(occ.dtStart.timestamp),
+                    shanghaiZone
+                )
+                assertEquals(8, occInShanghai.hour,
+                    "Hour should remain 8 in Shanghai (no DST) for ${occInShanghai.month}")
+
+                // Verify offset is always +08:00
+                assertEquals(ZoneOffset.ofHours(8), occInShanghai.offset,
+                    "Shanghai offset should always be +08:00")
+            }
+        }
     }
 
     // ==================== All-Day Event Tests ====================

@@ -54,6 +54,21 @@ class VTimezoneGeneratorTest {
             assertTrue(result.contains("BEGIN:STANDARD"))
             assertFalse(result.contains("BEGIN:DAYLIGHT"))
         }
+
+        @Test
+        @DisplayName("Asia/Shanghai generates +0800 with no DST (ical4j issue #720)")
+        fun `Asia Shanghai generates correct format`() {
+            // ical4j issue #720: Embedded VTIMEZONE for Asia/Shanghai was incorrect
+            // China uses fixed UTC+8 with no DST since 1991
+            val result = generator.generate("Asia/Shanghai")
+
+            assertTrue(result.contains("TZID:Asia/Shanghai"))
+            assertTrue(result.contains("TZOFFSETTO:+0800"))
+            assertTrue(result.contains("BEGIN:STANDARD"))
+            // China abolished DST in 1991 - no DAYLIGHT component
+            assertFalse(result.contains("BEGIN:DAYLIGHT"),
+                "Asia/Shanghai should NOT have DAYLIGHT component - China has no DST")
+        }
     }
 
     @Nested
