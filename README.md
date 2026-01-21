@@ -7,6 +7,24 @@
 
 A Kotlin CalDAV client with offline sync and conflict resolution. Sync calendars with iCloud, Nextcloud, and other CalDAV servers.
 
+## RFC Compliance
+
+| RFC | Title | Status |
+|-----|-------|--------|
+| [RFC 5545](https://datatracker.ietf.org/doc/html/rfc5545) | iCalendar Core (VEVENT, VTODO, VJOURNAL, RRULE) | ✅ Full |
+| [RFC 5546](https://datatracker.ietf.org/doc/html/rfc5546) | iTIP (iCalendar Transport-Independent Interoperability) | ✅ Full |
+| [RFC 4918](https://datatracker.ietf.org/doc/html/rfc4918) | WebDAV (PROPFIND, REPORT, PUT, DELETE) | ✅ Full |
+| [RFC 4791](https://datatracker.ietf.org/doc/html/rfc4791) | CalDAV (calendar-query, calendar-multiget) | ✅ Full |
+| [RFC 6578](https://datatracker.ietf.org/doc/html/rfc6578) | WebDAV Sync (sync-collection, sync-token) | ✅ Full |
+| [RFC 3744](https://datatracker.ietf.org/doc/html/rfc3744) | WebDAV ACL (access control, privileges) | ✅ Full |
+| [RFC 6638](https://datatracker.ietf.org/doc/html/rfc6638) | CalDAV Scheduling (iTIP delivery, free-busy) | ✅ Full |
+| [RFC 7986](https://datatracker.ietf.org/doc/html/rfc7986) | New iCalendar Properties (COLOR, IMAGE, CONFERENCE) | ✅ Full |
+| [RFC 9073](https://datatracker.ietf.org/doc/html/rfc9073) | Event Publishing Extensions (VLOCATION, PARTICIPANT) | ✅ Full |
+| [RFC 9074](https://datatracker.ietf.org/doc/html/rfc9074) | VALARM Extensions (ACKNOWLEDGED, UID, PROXIMITY) | ✅ Full |
+| [RFC 9253](https://datatracker.ietf.org/doc/html/rfc9253) | iCalendar Relationships (LINK, enhanced RELATED-TO) | ✅ Full |
+| [RFC 6047](https://datatracker.ietf.org/doc/html/rfc6047) | iMIP (iCalendar Message-Based Interop) | ⬜ Not planned |
+| [RFC 4324](https://datatracker.ietf.org/doc/html/rfc4324) | iCAL (Calendar Access Protocol) | ⬜ Obsolete |
+
 ## Features
 
 ### iCalendar (RFC 5545)
