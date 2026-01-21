@@ -22,8 +22,7 @@ A Kotlin CalDAV client with offline sync and conflict resolution. Sync calendars
 | [RFC 9073](https://datatracker.ietf.org/doc/html/rfc9073) | Event Publishing Extensions (VLOCATION, PARTICIPANT) | ✅ Full |
 | [RFC 9074](https://datatracker.ietf.org/doc/html/rfc9074) | VALARM Extensions (ACKNOWLEDGED, UID, PROXIMITY) | ✅ Full |
 | [RFC 9253](https://datatracker.ietf.org/doc/html/rfc9253) | iCalendar Relationships (LINK, enhanced RELATED-TO) | ✅ Full |
-| [RFC 6047](https://datatracker.ietf.org/doc/html/rfc6047) | iMIP (iCalendar Message-Based Interop) | ⬜ Not planned |
-| [RFC 4324](https://datatracker.ietf.org/doc/html/rfc4324) | iCAL (Calendar Access Protocol) | ⬜ Obsolete |
+| [RFC 6047](https://datatracker.ietf.org/doc/html/rfc6047) | iMIP (email-based scheduling) | ⬜ Out of scope |
 
 ## Features
 
