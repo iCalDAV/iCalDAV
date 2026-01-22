@@ -14,6 +14,7 @@ import org.onekash.icaldav.model.RelationType
 import net.fortuna.ical4j.data.CalendarBuilder
 import net.fortuna.ical4j.model.Component
 import net.fortuna.ical4j.model.Property
+import net.fortuna.ical4j.model.TimeZoneRegistry
 import net.fortuna.ical4j.model.component.VAlarm
 import net.fortuna.ical4j.model.component.VEvent
 import net.fortuna.ical4j.model.component.VFreeBusy
@@ -32,8 +33,40 @@ import java.time.Duration
  *
  * Thread Safety: This class is thread-safe. The ical4j configuration is
  * initialized once using double-checked locking before first use.
+ *
+ * ## TimeZoneRegistry Configuration
+ *
+ * By default, ICalParser uses [SimpleTimeZoneRegistry] which is Android-safe.
+ * For JVM servers that need richer timezone handling, use [createWithFullRegistry].
+ *
+ * Usage:
+ * ```kotlin
+ * // Android (default - safe)
+ * val parser = ICalParser()
+ *
+ * // JVM Server (full features)
+ * val parser = ICalParser.createWithFullRegistry()
+ *
+ * // Custom registry (advanced)
+ * val parser = ICalParser(customRegistry)
+ * ```
+ *
+ * @param registry TimeZoneRegistry to use for timezone resolution.
  */
-class ICalParser {
+class ICalParser(
+    private val registry: TimeZoneRegistry
+) {
+
+    /**
+     * Create an ICalParser with the default Android-safe [SimpleTimeZoneRegistry].
+     *
+     * This constructor is recommended for most use cases, especially on Android.
+     * The SimpleTimeZoneRegistry:
+     * - Uses ZoneId.of() which is supported on Android via desugaring
+     * - Relies on embedded VTIMEZONE definitions in iCalendar data
+     * - Is lightweight and has no external dependencies
+     */
+    constructor() : this(SimpleTimeZoneRegistry())
 
     init {
         // Ensure ical4j is configured before any parsing
@@ -44,6 +77,23 @@ class ICalParser {
         @Volatile
         private var configured = false
         private val configLock = Any()
+
+        /**
+         * Create an ICalParser with [TimeZoneRegistryImpl] for full timezone support.
+         *
+         * This factory method is intended for JVM server environments where:
+         * - ZoneRulesProvider is available (not on Android)
+         * - You need pre-built TimeZone objects from the registry
+         * - You need complete Windows timezone name mapping
+         *
+         * **Warning**: Do NOT use this on Android - it will crash at runtime
+         * because ZoneRulesProvider is not available via desugaring.
+         *
+         * @return ICalParser configured with TimeZoneRegistryImpl
+         */
+        fun createWithFullRegistry(): ICalParser {
+            return ICalParser(net.fortuna.ical4j.model.TimeZoneRegistryImpl())
+        }
 
         /**
          * Ensure ical4j is configured exactly once, thread-safely.
@@ -70,13 +120,24 @@ class ICalParser {
          * any ICalParser instances are created.
          */
         private fun configureIcal4j() {
-            // Use MapTimeZoneCache for Android compatibility (no file system cache)
+            // Use MapTimeZoneCache (no file system cache, no network dependency)
             System.setProperty("net.fortuna.ical4j.timezone.cache.impl",
                 "net.fortuna.ical4j.util.MapTimeZoneCache")
+
+            // Disable timezone updates (requires network access)
+            System.setProperty("net.fortuna.ical4j.timezone.update.enabled", "false")
+
             // Enable relaxed parsing for malformed iCal data from various servers
             System.setProperty("ical4j.unfolding.relaxed", "true")
             System.setProperty("ical4j.parsing.relaxed", "true")
         }
+    }
+
+    /**
+     * Create a CalendarBuilder with the configured TimeZoneRegistry.
+     */
+    private fun createCalendarBuilder(): CalendarBuilder {
+        return CalendarBuilder(registry)
     }
 
     /**
@@ -91,7 +152,7 @@ class ICalParser {
     fun parseAllEvents(icalData: String): ParseResult<List<ICalEvent>> {
         return try {
             val unfolded = unfoldICalData(icalData)
-            val builder = CalendarBuilder()
+            val builder = createCalendarBuilder()
             val calendar = builder.build(StringReader(unfolded))
 
             val events = calendar.getComponents<VEvent>(Component.VEVENT)
@@ -114,7 +175,7 @@ class ICalParser {
     fun parseAllTodos(icalData: String): ParseResult<List<ICalTodo>> {
         return try {
             val unfolded = unfoldICalData(icalData)
-            val builder = CalendarBuilder()
+            val builder = createCalendarBuilder()
             val calendar = builder.build(StringReader(unfolded))
 
             val todos = calendar.getComponents<VToDo>(Component.VTODO)
@@ -336,7 +397,7 @@ class ICalParser {
     fun parseAllJournals(icalData: String): ParseResult<List<ICalJournal>> {
         return try {
             val unfolded = unfoldICalData(icalData)
-            val builder = CalendarBuilder()
+            val builder = createCalendarBuilder()
             val calendar = builder.build(StringReader(unfolded))
 
             val journals = calendar.getComponents<VJournal>(Component.VJOURNAL)
@@ -550,7 +611,7 @@ class ICalParser {
     fun parse(icalData: String): ParseResult<ICalCalendar> {
         return try {
             val unfolded = unfoldICalData(icalData)
-            val builder = CalendarBuilder()
+            val builder = createCalendarBuilder()
             val calendar = builder.build(StringReader(unfolded))
 
             // Parse calendar-level properties
@@ -618,7 +679,7 @@ class ICalParser {
     fun parseWithMethod(icalData: String): ParseResult<CalendarParseResult> {
         return try {
             val unfolded = unfoldICalData(icalData)
-            val builder = CalendarBuilder()
+            val builder = createCalendarBuilder()
             val calendar = builder.build(StringReader(unfolded))
 
             // Extract METHOD from VCALENDAR
@@ -1346,7 +1407,7 @@ class ICalParser {
     fun parseFreeBusy(icalData: String): ICalFreeBusy? {
         return try {
             val unfolded = unfoldICalData(icalData)
-            val builder = CalendarBuilder()
+            val builder = createCalendarBuilder()
             val calendar = builder.build(StringReader(unfolded))
 
             val vfb = calendar.getComponents<VFreeBusy>(Component.VFREEBUSY).firstOrNull()
