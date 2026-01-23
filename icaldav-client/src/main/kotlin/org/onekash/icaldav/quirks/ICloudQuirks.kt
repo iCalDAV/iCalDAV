@@ -71,9 +71,9 @@ class ICloudQuirks : CalDavQuirks {
         for (match in responseRegex.findAll(responseBody)) {
             val responseXml = match.groupValues[1]
 
-            // Check if it's a calendar (has calendar resourcetype)
-            val isCalendar = responseXml.contains("<calendar", ignoreCase = true) &&
-                responseXml.contains("caldav", ignoreCase = true)
+            // Check if it's a calendar (has <calendar> inside <resourcetype>)
+            // Must check resourcetype specifically to avoid matching <calendar-color> etc.
+            val isCalendar = hasCalendarResourceType(responseXml)
 
             if (isCalendar) {
                 val href = extractHref(responseXml) ?: continue
@@ -337,5 +337,32 @@ class ICloudQuirks : CalDavQuirks {
         } else {
             url.substringBefore("/")
         }
+    }
+
+    /**
+     * Check if response has calendar resourcetype.
+     *
+     * Looks specifically for <calendar xmlns="...caldav..."/> inside <resourcetype>.
+     * This avoids false positives from other tags like <calendar-color> which may
+     * appear in 404 propstat sections for non-calendar collections.
+     *
+     * Real iCloud examples:
+     * - Calendar: <resourcetype><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+     * - Root collection: <resourcetype><collection/></resourcetype> (no calendar)
+     */
+    private fun hasCalendarResourceType(xml: String): Boolean {
+        // Extract resourcetype element first
+        val resourceTypeRegex = Regex(
+            """<(?:d:)?resourcetype[^>]*>(.*?)</(?:d:)?resourcetype>""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+        val resourceTypeMatch = resourceTypeRegex.find(xml) ?: return false
+        val resourceTypeContent = resourceTypeMatch.groupValues[1]
+
+        // Check for <calendar> with caldav namespace inside resourcetype
+        // Handles: <calendar xmlns="...caldav.../>, <c:calendar/>, <calendar/>
+        return resourceTypeContent.contains("<calendar", ignoreCase = true) &&
+            (resourceTypeContent.contains("caldav", ignoreCase = true) ||
+             resourceTypeContent.contains("<c:calendar", ignoreCase = true))
     }
 }
