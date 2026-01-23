@@ -23,11 +23,18 @@ data class ICalDateTime(
 ) {
     /**
      * Convert to LocalDate (for all-day events or date comparison).
+     *
+     * For DATE values (isDate=true): Uses UTC to preserve the calendar date.
+     * RFC 5545 DATE values represent calendar dates, not moments in time.
+     * Using local timezone would shift the date incorrectly:
+     *   Jan 23 00:00 UTC → Jan 22 19:00 EST → Jan 22 (WRONG)
+     *
+     * For DATE-TIME values: Uses stored timezone (or system default for floating).
      */
     fun toLocalDate(): LocalDate {
-        return Instant.ofEpochMilli(timestamp)
-            .atZone(timezone ?: ZoneId.systemDefault())
-            .toLocalDate()
+        // DATE values must use UTC to preserve the calendar date
+        val zone = if (isDate) ZoneOffset.UTC else (timezone ?: ZoneId.systemDefault())
+        return Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate()
     }
 
     /**
@@ -37,10 +44,14 @@ data class ICalDateTime(
 
     /**
      * Convert to ZonedDateTime with preserved or system timezone.
+     *
+     * For DATE values: Uses UTC to preserve the calendar date.
+     * For DATE-TIME values: Uses stored timezone (or system default for floating).
      */
     fun toZonedDateTime(): ZonedDateTime {
-        return Instant.ofEpochMilli(timestamp)
-            .atZone(timezone ?: ZoneId.systemDefault())
+        // DATE values must use UTC to preserve the calendar date
+        val zone = if (isDate) ZoneOffset.UTC else (timezone ?: ZoneId.systemDefault())
+        return Instant.ofEpochMilli(timestamp).atZone(zone)
     }
 
     /**
@@ -104,16 +115,19 @@ data class ICalDateTime(
                 )
             }
 
-            // DATE format: 20231215
+            // DATE format: 20231215 (all-day events)
+            // RFC 5545: DATE values are calendar dates without time zone.
+            // Store as UTC midnight to preserve the calendar date across time zones.
+            // Example: "20260123" → Jan 23 00:00:00 UTC (not local midnight)
+            // This ensures consistent day calculation regardless of device timezone.
             if (trimmed.length == 8 && DATE_PATTERN.matches(trimmed)) {
                 val date = LocalDate.parse(trimmed, DateTimeFormatter.BASIC_ISO_DATE)
-                // All-day events start at midnight in local timezone
-                val zone = tzid?.let { parseTimezone(it) } ?: ZoneId.systemDefault()
-                val instant = date.atStartOfDay(zone).toInstant()
+                // Use UTC midnight to preserve calendar date
+                val instant = date.atStartOfDay(ZoneOffset.UTC).toInstant()
                 return ICalDateTime(
                     timestamp = instant.toEpochMilli(),
-                    timezone = zone,
-                    isUtc = false,
+                    timezone = null,  // UTC
+                    isUtc = true,     // Stored as UTC
                     isDate = true
                 )
             }
@@ -164,27 +178,51 @@ data class ICalDateTime(
 
         /**
          * Create from LocalDate (for all-day events).
+         *
+         * RFC 5545: DATE values are calendar dates without time zone.
+         * Store as UTC midnight to preserve the calendar date across all timezones.
+         *
+         * @param date The calendar date to store
+         * @param timezone Ignored for DATE values (kept for API compatibility)
          */
+        @Suppress("UNUSED_PARAMETER")
         fun fromLocalDate(date: LocalDate, timezone: ZoneId = ZoneId.systemDefault()): ICalDateTime {
-            val instant = date.atStartOfDay(timezone).toInstant()
+            // Use UTC midnight to preserve the calendar date (RFC 5545)
+            val instant = date.atStartOfDay(ZoneOffset.UTC).toInstant()
             return ICalDateTime(
                 timestamp = instant.toEpochMilli(),
-                timezone = timezone,
-                isUtc = false,
+                timezone = null,  // UTC
+                isUtc = true,     // Stored as UTC
                 isDate = true
             )
         }
 
         /**
          * Create from ZonedDateTime.
+         *
+         * For DATE values (isDate=true): Extracts the LocalDate and stores as UTC midnight
+         * to preserve the calendar date across timezones.
+         *
+         * For DATE-TIME values: Uses the exact instant and preserves the timezone.
          */
         fun fromZonedDateTime(zdt: ZonedDateTime, isDate: Boolean = false): ICalDateTime {
-            return ICalDateTime(
-                timestamp = zdt.toInstant().toEpochMilli(),
-                timezone = zdt.zone,
-                isUtc = zdt.zone == ZoneOffset.UTC,
-                isDate = isDate
-            )
+            return if (isDate) {
+                // For DATE values, extract calendar date and store as UTC midnight
+                val instant = zdt.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant()
+                ICalDateTime(
+                    timestamp = instant.toEpochMilli(),
+                    timezone = null,  // UTC
+                    isUtc = true,     // Stored as UTC
+                    isDate = true
+                )
+            } else {
+                ICalDateTime(
+                    timestamp = zdt.toInstant().toEpochMilli(),
+                    timezone = zdt.zone,
+                    isUtc = zdt.zone == ZoneOffset.UTC,
+                    isDate = false
+                )
+            }
         }
 
         /**

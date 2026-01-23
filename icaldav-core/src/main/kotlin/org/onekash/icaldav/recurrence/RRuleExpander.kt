@@ -52,7 +52,13 @@ class RRuleExpander {
         val occurrences = mutableListOf<ICalEvent>()
 
         // Get the event's timezone for calculations
-        val eventZone = masterEvent.dtStart.timezone ?: ZoneId.systemDefault()
+        // For all-day events (isDate=true), always use UTC to preserve calendar dates.
+        // DATE values are stored as UTC midnight, so expansion must use UTC consistently.
+        val eventZone = if (masterEvent.isAllDay) {
+            ZoneOffset.UTC
+        } else {
+            masterEvent.dtStart.timezone ?: ZoneId.systemDefault()
+        }
 
         // Calculate event duration for creating occurrence end times
         val eventDuration = calculateDuration(masterEvent)
