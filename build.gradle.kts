@@ -1,6 +1,6 @@
 plugins {
     kotlin("jvm") version "1.9.22" apply false
-    id("com.android.library") version "8.2.0" apply false
+    id("com.android.library") version "8.7.2" apply false
     id("org.jetbrains.dokka") version "1.9.10" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.4" apply false
     id("jacoco")
