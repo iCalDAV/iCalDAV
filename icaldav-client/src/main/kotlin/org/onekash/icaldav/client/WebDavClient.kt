@@ -101,7 +101,15 @@ class WebDavClient(
                         val location = response.header("Location") ?: break
 
                         // Resolve relative URLs
-                        val newUrl = request.url.resolve(location) ?: break
+                        var newUrl = request.url.resolve(location) ?: break
+
+                        // SECURITY FIX: If original request was HTTPS and redirect is HTTP to same host,
+                        // upgrade to HTTPS. This handles misconfigured servers (e.g., Nextcloud)
+                        // that return HTTP in .well-known redirect instead of HTTPS.
+                        if (request.url.isHttps && !newUrl.isHttps &&
+                            request.url.host.equals(newUrl.host, ignoreCase = true)) {
+                            newUrl = newUrl.newBuilder().scheme("https").build()
+                        }
 
                         response.close()
                         val redirectRequest = request.newBuilder()
