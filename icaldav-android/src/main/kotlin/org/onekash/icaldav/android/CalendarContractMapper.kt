@@ -258,8 +258,12 @@ object CalendarContractMapper {
      * @return The reconstructed ICalEvent
      */
     fun fromCursor(cursor: Cursor): ICalEvent {
+        // Get _SYNC_ID if available, otherwise generate a UID for locally-created events
+        // Locally-created events (inserted without asSyncAdapter) won't have _SYNC_ID
+        val eventId = cursor.getLongOrNull(Events._ID)
         val syncId = cursor.getStringOrNull(Events._SYNC_ID)
-            ?: throw IllegalArgumentException("Event missing _SYNC_ID")
+            ?: eventId?.let { "local-$it@icaldav.generated" }
+            ?: throw IllegalArgumentException("Event missing both _SYNC_ID and _ID")
 
         val isAllDay = cursor.getIntOrDefault(Events.ALL_DAY, 0) == 1
         val dtStartMs = cursor.getLongOrDefault(Events.DTSTART, System.currentTimeMillis())
