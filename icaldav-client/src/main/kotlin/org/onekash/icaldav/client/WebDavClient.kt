@@ -546,7 +546,8 @@ class WebDavClient(
                     return@repeat // Retry
                 }
 
-                return handler(response)
+                // Ensure response is closed after handler processes it
+                return response.use { handler(it) }
 
             } catch (e: SSLHandshakeException) {
                 // NEVER retry SSL errors - indicates security issue (cert problem, MITM)
