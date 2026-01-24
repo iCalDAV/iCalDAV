@@ -471,6 +471,36 @@ class CalendarProviderHelper(
         )
     }
 
+    /**
+     * Store sync ID (_SYNC_ID) for an event.
+     *
+     * This is used after successfully pushing a locally-created event to the server.
+     * Locally-created events (inserted without asSyncAdapter) have _SYNC_ID = null.
+     * After push, we update _SYNC_ID to match the UID sent to the server so that
+     * subsequent syncs can match the event.
+     *
+     * IMPORTANT: Only sync adapters can write _SYNC_ID, so this uses sync adapter URI.
+     *
+     * @param eventId The event ID
+     * @param syncId The sync ID (UID) to store
+     * @return Number of rows updated
+     */
+    fun storeSyncId(eventId: Long, syncId: String): Int {
+        val values = ContentValues().apply {
+            put(Events._SYNC_ID, syncId)
+        }
+        return contentResolver.update(
+            SyncAdapterUri.asSyncAdapter(
+                ContentUris.withAppendedId(Events.CONTENT_URI, eventId),
+                accountName,
+                accountType
+            ),
+            values,
+            null,
+            null
+        )
+    }
+
     // ==================== Instance Operations ====================
 
     /**
