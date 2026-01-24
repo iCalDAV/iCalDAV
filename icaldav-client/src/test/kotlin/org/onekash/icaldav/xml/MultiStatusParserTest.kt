@@ -391,6 +391,28 @@ END:VCALENDAR</C:calendar-data>
             val multiStatus = parseSuccess(xml)
             assertNull(multiStatus.responses[0].etag)
         }
+
+        @Test
+        fun `decodes HTML-encoded etag with quot entities`() {
+            // Nextcloud and some servers return etags with HTML entity encoding
+            val xml = """
+                <D:multistatus xmlns:D="DAV:">
+                    <D:response>
+                        <D:href>/cal/event.ics</D:href>
+                        <D:propstat>
+                            <D:prop>
+                                <D:getetag>&quot;86d7e34a0b92938ed6fe0213b9eda285&quot;</D:getetag>
+                            </D:prop>
+                            <D:status>HTTP/1.1 200 OK</D:status>
+                        </D:propstat>
+                    </D:response>
+                </D:multistatus>
+            """.trimIndent()
+
+            val multiStatus = parseSuccess(xml)
+            // Should decode &quot; to " and then remove surrounding quotes
+            assertEquals("86d7e34a0b92938ed6fe0213b9eda285", multiStatus.responses[0].etag)
+        }
     }
 
     @Nested

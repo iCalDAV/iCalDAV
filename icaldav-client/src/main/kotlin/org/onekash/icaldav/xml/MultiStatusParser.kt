@@ -339,10 +339,25 @@ class MultiStatusParser {
      */
     private fun extractEtag(xml: String): String? {
         val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?getetag[^>]*>"?([^"<]+)"?</(?:[a-zA-Z]+:)?getetag>""",
+            """<(?:[a-zA-Z]+:)?getetag[^>]*>([^<]+)</(?:[a-zA-Z]+:)?getetag>""",
             RegexOption.IGNORE_CASE
         )
         return pattern.find(xml)?.groupValues?.get(1)?.trim()
+            ?.let { decodeXmlEntities(it) }
+            ?.removeSurrounding("\"")  // Remove quotes after decoding entities
+    }
+
+    /**
+     * Decode XML/HTML entities in a string.
+     * Handles: &quot; &amp; &lt; &gt; &apos;
+     */
+    private fun decodeXmlEntities(text: String): String {
+        return text
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&apos;", "'")
     }
 
     /**
