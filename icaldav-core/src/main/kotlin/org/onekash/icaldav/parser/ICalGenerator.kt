@@ -196,6 +196,11 @@ class ICalGenerator(
         // Sequence (required for iCloud, increment on updates)
         appendLine("SEQUENCE:${event.sequence}")
 
+        // Priority (RFC 5545) - only output if non-zero (0 = undefined)
+        if (event.priority > 0) {
+            appendLine("PRIORITY:${event.priority}")
+        }
+
         // Transparency
         if (event.transparency != Transparency.OPAQUE) {
             appendLine("TRANSP:${event.transparency.toICalString()}")
@@ -234,6 +239,11 @@ class ICalGenerator(
         // URL
         event.url?.let {
             appendLine("URL:$it")
+        }
+
+        // GEO (RFC 5545) - geographic coordinates "lat;lon"
+        event.geo?.let {
+            appendLine("GEO:$it")
         }
 
         // CLASS (RFC 5545 Section 3.8.1.3)

@@ -254,4 +254,167 @@ class ICalParserTest {
         assertEquals("Meeting, Important", event.summary)
         assertTrue(event.description!!.contains("\n"))
     }
+
+    // ============ PRIORITY Tests ============
+
+    @Test
+    fun `parse event with PRIORITY`() {
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:priority-event-123
+            DTSTAMP:20231215T100000Z
+            DTSTART:20231215T140000Z
+            PRIORITY:1
+            SUMMARY:High Priority Event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = parser.parseAllEvents(icalData)
+
+        assertTrue(result is ParseResult.Success)
+        val event = result.getOrNull()!![0]
+        assertEquals(1, event.priority)
+    }
+
+    @Test
+    fun `parse event with PRIORITY 9 (lowest)`() {
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:low-priority-event
+            DTSTAMP:20231215T100000Z
+            DTSTART:20231215T140000Z
+            PRIORITY:9
+            SUMMARY:Low Priority Event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = parser.parseAllEvents(icalData)
+
+        assertTrue(result is ParseResult.Success)
+        val event = result.getOrNull()!![0]
+        assertEquals(9, event.priority)
+    }
+
+    @Test
+    fun `parse event without PRIORITY defaults to 0`() {
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:no-priority-event
+            DTSTAMP:20231215T100000Z
+            DTSTART:20231215T140000Z
+            SUMMARY:No Priority Event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = parser.parseAllEvents(icalData)
+
+        assertTrue(result is ParseResult.Success)
+        val event = result.getOrNull()!![0]
+        assertEquals(0, event.priority)
+    }
+
+    @Test
+    fun `parse event with invalid PRIORITY coerces to valid range`() {
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:invalid-priority-event
+            DTSTAMP:20231215T100000Z
+            DTSTART:20231215T140000Z
+            PRIORITY:15
+            SUMMARY:Invalid Priority Event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = parser.parseAllEvents(icalData)
+
+        assertTrue(result is ParseResult.Success)
+        val event = result.getOrNull()!![0]
+        assertEquals(9, event.priority) // Coerced to max valid value
+    }
+
+    // ============ GEO Tests ============
+
+    @Test
+    fun `parse event with GEO`() {
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:geo-event-123
+            DTSTAMP:20231215T100000Z
+            DTSTART:20231215T140000Z
+            GEO:37.386013;-122.082932
+            SUMMARY:Event at Apple Park
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = parser.parseAllEvents(icalData)
+
+        assertTrue(result is ParseResult.Success)
+        val event = result.getOrNull()!![0]
+        assertEquals("37.386013;-122.082932", event.geo)
+    }
+
+    @Test
+    fun `parse event without GEO defaults to null`() {
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:no-geo-event
+            DTSTAMP:20231215T100000Z
+            DTSTART:20231215T140000Z
+            SUMMARY:No Location Event
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = parser.parseAllEvents(icalData)
+
+        assertTrue(result is ParseResult.Success)
+        val event = result.getOrNull()!![0]
+        assertNull(event.geo)
+    }
+
+    @Test
+    fun `parse event with negative GEO coordinates`() {
+        val icalData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:negative-geo-event
+            DTSTAMP:20231215T100000Z
+            DTSTART:20231215T140000Z
+            GEO:-33.8688;151.2093
+            SUMMARY:Event in Sydney
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val result = parser.parseAllEvents(icalData)
+
+        assertTrue(result is ParseResult.Success)
+        val event = result.getOrNull()!![0]
+        assertEquals("-33.8688;151.2093", event.geo)
+    }
 }

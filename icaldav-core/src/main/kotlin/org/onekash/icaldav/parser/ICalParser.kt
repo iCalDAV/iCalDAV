@@ -790,6 +790,13 @@ class ICalParser(
             val urlValue = vevent.getPropertyOrNull<Property>("URL")
                 ?.value
 
+            // Parse PRIORITY (RFC 5545) - 0=undefined, 1=highest, 9=lowest
+            val priority = vevent.getPropertyOrNull<Property>("PRIORITY")
+                ?.value?.toIntOrNull()?.coerceIn(0, 9) ?: 0
+
+            // Parse GEO (RFC 5545) - "latitude;longitude" format
+            val geo = vevent.getPropertyOrNull<Property>("GEO")?.value
+
             // Parse CLASS property (RFC 5545 Section 3.8.1.3)
             val classValue = vevent.getPropertyOrNull<Property>("CLASS")?.value
             val classification = Classification.fromString(classValue)
@@ -867,6 +874,8 @@ class ICalParser(
                 created = created,
                 transparency = Transparency.fromString(transpValue),
                 url = urlValue,
+                priority = priority,
+                geo = geo,
                 images = images,
                 conferences = conferences,
                 links = links,
@@ -1338,6 +1347,7 @@ class ICalParser(
         "RECURRENCE-ID", "RRULE", "EXDATE", "RDATE",
         "SUMMARY", "DESCRIPTION", "LOCATION",
         "STATUS", "SEQUENCE", "TRANSP", "URL", "CLASS",
+        "PRIORITY", "GEO",  // RFC 5545 additional properties
         "COLOR", "IMAGE", "CONFERENCE",
         "LINK", "RELATED-TO",
         "ORGANIZER", "ATTENDEE",

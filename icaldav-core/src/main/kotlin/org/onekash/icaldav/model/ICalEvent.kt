@@ -96,6 +96,12 @@ data class ICalEvent(
     /** URL associated with the event */
     val url: String?,
 
+    /** Event priority (RFC 5545): 0=undefined, 1=highest, 9=lowest */
+    val priority: Int = 0,
+
+    /** Geographic location (RFC 5545 GEO): "latitude;longitude" format */
+    val geo: String? = null,
+
     // RFC 7986 Modern Properties
 
     /** Images associated with the event (RFC 7986) */

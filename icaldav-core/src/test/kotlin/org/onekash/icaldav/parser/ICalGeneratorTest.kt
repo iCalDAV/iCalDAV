@@ -357,6 +357,67 @@ class ICalGeneratorTest {
         assertFalse(icalString.contains("BEGIN:VTIMEZONE"))
     }
 
+    // ============ PRIORITY Tests ============
+
+    @Test
+    fun `generate event with priority includes PRIORITY property`() {
+        val event = createTestEvent(priority = 1)
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("PRIORITY:1"))
+    }
+
+    @Test
+    fun `generate event with priority 0 excludes PRIORITY property`() {
+        val event = createTestEvent(priority = 0)
+
+        val icalString = generator.generate(event)
+
+        // Priority 0 means undefined, should not be output
+        assertFalse(icalString.contains("PRIORITY:"))
+    }
+
+    @Test
+    fun `generate event with priority 9 includes PRIORITY property`() {
+        val event = createTestEvent(priority = 9)
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("PRIORITY:9"))
+    }
+
+    // ============ GEO Tests ============
+
+    @Test
+    fun `generate event with geo includes GEO property`() {
+        val event = createTestEvent(geo = "37.386013;-122.082932")
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("GEO:37.386013;-122.082932"))
+    }
+
+    @Test
+    fun `generate event without geo excludes GEO property`() {
+        val event = createTestEvent(geo = null)
+
+        val icalString = generator.generate(event)
+
+        assertFalse(icalString.contains("GEO:"))
+    }
+
+    @Test
+    fun `generate event with negative geo coordinates`() {
+        val event = createTestEvent(geo = "-33.8688;151.2093")
+
+        val icalString = generator.generate(event)
+
+        assertTrue(icalString.contains("GEO:-33.8688;151.2093"))
+    }
+
+    // ============ Helper Functions ============
+
     private fun createTestEvent(
         uid: String = "test-uid-123",
         summary: String = "Test Event",
@@ -366,7 +427,9 @@ class ICalGeneratorTest {
         alarms: List<ICalAlarm> = emptyList(),
         recurrenceId: ICalDateTime? = null,
         rrule: RRule? = null,
-        timezone: ZoneId = ZoneId.of("America/New_York")
+        timezone: ZoneId = ZoneId.of("America/New_York"),
+        priority: Int = 0,
+        geo: String? = null
     ): ICalEvent {
         val zone = timezone
         val start = ZonedDateTime.of(2023, 12, 15, 14, 0, 0, 0, zone)
@@ -397,6 +460,8 @@ class ICalGeneratorTest {
             created = null,
             transparency = Transparency.OPAQUE,
             url = null,
+            priority = priority,
+            geo = geo,
             rawProperties = emptyMap()
         )
     }
