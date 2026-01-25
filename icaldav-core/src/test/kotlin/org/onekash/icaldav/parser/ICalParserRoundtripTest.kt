@@ -533,6 +533,200 @@ class ICalParserRoundtripTest {
     }
 
     @Nested
+    @DisplayName("PRIORITY and GEO Roundtrip")
+    inner class PriorityGeoRoundtripTests {
+
+        @Test
+        fun `event with priority survives roundtrip`() {
+            val originalIcal = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-priority
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                DTEND:20231215T150000Z
+                SUMMARY:High Priority Meeting
+                PRIORITY:1
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val parseResult1 = parser.parseAllEvents(originalIcal)
+            assertTrue(parseResult1 is ParseResult.Success)
+            val event1 = parseResult1.getOrNull()!![0]
+
+            assertEquals(1, event1.priority)
+
+            val generatedIcal = generator.generate(event1, includeMethod = false)
+            val parseResult2 = parser.parseAllEvents(generatedIcal)
+            assertTrue(parseResult2 is ParseResult.Success)
+            val event2 = parseResult2.getOrNull()!![0]
+
+            assertEquals(event1.priority, event2.priority)
+        }
+
+        @Test
+        fun `event with priority 0 survives roundtrip without PRIORITY property`() {
+            val originalIcal = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-no-priority
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                DTEND:20231215T150000Z
+                SUMMARY:No Priority Meeting
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val parseResult1 = parser.parseAllEvents(originalIcal)
+            val event1 = parseResult1.getOrNull()!![0]
+
+            assertEquals(0, event1.priority)
+
+            val generatedIcal = generator.generate(event1, includeMethod = false)
+
+            // PRIORITY:0 should NOT be in output (0 = undefined)
+            assertFalse(generatedIcal.contains("PRIORITY:"))
+
+            val parseResult2 = parser.parseAllEvents(generatedIcal)
+            val event2 = parseResult2.getOrNull()!![0]
+
+            assertEquals(0, event2.priority)
+        }
+
+        @Test
+        fun `event with geo survives roundtrip`() {
+            val originalIcal = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-geo
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                DTEND:20231215T150000Z
+                SUMMARY:Meeting at Apple Park
+                GEO:37.386013;-122.082932
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val parseResult1 = parser.parseAllEvents(originalIcal)
+            assertTrue(parseResult1 is ParseResult.Success)
+            val event1 = parseResult1.getOrNull()!![0]
+
+            assertEquals("37.386013;-122.082932", event1.geo)
+
+            val generatedIcal = generator.generate(event1, includeMethod = false)
+            val parseResult2 = parser.parseAllEvents(generatedIcal)
+            assertTrue(parseResult2 is ParseResult.Success)
+            val event2 = parseResult2.getOrNull()!![0]
+
+            assertEquals(event1.geo, event2.geo)
+        }
+
+        @Test
+        fun `event with negative geo coordinates survives roundtrip`() {
+            val originalIcal = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-geo-negative
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                DTEND:20231215T150000Z
+                SUMMARY:Meeting in Sydney
+                GEO:-33.8688;151.2093
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val parseResult1 = parser.parseAllEvents(originalIcal)
+            val event1 = parseResult1.getOrNull()!![0]
+
+            assertEquals("-33.8688;151.2093", event1.geo)
+
+            val generatedIcal = generator.generate(event1, includeMethod = false)
+            val parseResult2 = parser.parseAllEvents(generatedIcal)
+            val event2 = parseResult2.getOrNull()!![0]
+
+            assertEquals(event1.geo, event2.geo)
+        }
+
+        @Test
+        fun `event with both priority and geo survives roundtrip`() {
+            val originalIcal = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-priority-geo
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                DTEND:20231215T150000Z
+                SUMMARY:Important Meeting at Location
+                PRIORITY:2
+                GEO:40.7128;-74.0060
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val parseResult1 = parser.parseAllEvents(originalIcal)
+            assertTrue(parseResult1 is ParseResult.Success)
+            val event1 = parseResult1.getOrNull()!![0]
+
+            assertEquals(2, event1.priority)
+            assertEquals("40.7128;-74.0060", event1.geo)
+
+            val generatedIcal = generator.generate(event1, includeMethod = false)
+            val parseResult2 = parser.parseAllEvents(generatedIcal)
+            assertTrue(parseResult2 is ParseResult.Success)
+            val event2 = parseResult2.getOrNull()!![0]
+
+            assertEquals(event1.priority, event2.priority)
+            assertEquals(event1.geo, event2.geo)
+        }
+
+        @Test
+        fun `event without geo survives roundtrip`() {
+            val originalIcal = """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Test//Test//EN
+                BEGIN:VEVENT
+                UID:roundtrip-no-geo
+                DTSTAMP:20231215T100000Z
+                DTSTART:20231215T140000Z
+                DTEND:20231215T150000Z
+                SUMMARY:Meeting without Location
+                END:VEVENT
+                END:VCALENDAR
+            """.trimIndent()
+
+            val parseResult1 = parser.parseAllEvents(originalIcal)
+            val event1 = parseResult1.getOrNull()!![0]
+
+            assertNull(event1.geo)
+
+            val generatedIcal = generator.generate(event1, includeMethod = false)
+
+            // GEO should NOT be in output when null
+            assertFalse(generatedIcal.contains("GEO:"))
+
+            val parseResult2 = parser.parseAllEvents(generatedIcal)
+            val event2 = parseResult2.getOrNull()!![0]
+
+            assertNull(event2.geo)
+        }
+    }
+
+    @Nested
     @DisplayName("Modified Instance (RECURRENCE-ID) Roundtrip")
     inner class ModifiedInstanceRoundtripTests {
 

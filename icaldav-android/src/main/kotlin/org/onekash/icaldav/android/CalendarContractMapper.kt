@@ -112,6 +112,16 @@ object CalendarContractMapper {
                 event.lastModified?.let {
                     put(Events.SYNC_DATA5, it.timestamp.toString())
                 }
+
+                // Priority (RFC 5545) - only store if non-zero
+                if (event.priority > 0) {
+                    put(Events.SYNC_DATA6, event.priority.toString())
+                }
+
+                // GEO (RFC 5545) - geographic coordinates
+                event.geo?.let {
+                    put(Events.SYNC_DATA7, it)
+                }
             }
 
             // URL
@@ -391,6 +401,12 @@ object CalendarContractMapper {
         // Parse color
         val color = cursor.getStringOrNull(Events.SYNC_DATA4)
 
+        // Parse priority (RFC 5545) - 0 if not set
+        val priority = cursor.getStringOrNull(Events.SYNC_DATA6)?.toIntOrNull()?.coerceIn(0, 9) ?: 0
+
+        // Parse geo (RFC 5545) - "lat;lon" format
+        val geo = cursor.getStringOrNull(Events.SYNC_DATA7)
+
         // Parse ACCESS_LEVEL and convert to Classification enum
         val accessLevel = cursor.getIntOrDefault(Events.ACCESS_LEVEL, Events.ACCESS_DEFAULT)
         val classification = mapClassification(accessLevel)
@@ -422,6 +438,8 @@ object CalendarContractMapper {
             created = null,
             transparency = transparency,
             url = cursor.getStringOrNull(Events.CUSTOM_APP_URI),
+            priority = priority,
+            geo = geo,
             rawProperties = emptyMap()
         )
     }

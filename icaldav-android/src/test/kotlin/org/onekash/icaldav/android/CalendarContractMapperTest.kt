@@ -312,6 +312,78 @@ class CalendarContractMapperTest {
         assertThat(values.getAsString(Events.ORGANIZER)).isEqualTo("organizer@example.com")
     }
 
+    // ==================== PRIORITY Tests ====================
+
+    @Test
+    fun `priority stored in SYNC_DATA6`() {
+        val event = createTestEvent(priority = 1)
+
+        val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
+
+        assertThat(values.getAsString(Events.SYNC_DATA6)).isEqualTo("1")
+    }
+
+    @Test
+    fun `priority 9 (lowest) stored correctly`() {
+        val event = createTestEvent(priority = 9)
+
+        val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
+
+        assertThat(values.getAsString(Events.SYNC_DATA6)).isEqualTo("9")
+    }
+
+    @Test
+    fun `priority 0 (undefined) not stored`() {
+        val event = createTestEvent(priority = 0)
+
+        val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
+
+        // Priority 0 means undefined, should not be stored
+        assertThat(values.containsKey(Events.SYNC_DATA6)).isFalse()
+    }
+
+    // ==================== GEO Tests ====================
+
+    @Test
+    fun `geo stored in SYNC_DATA7`() {
+        val event = createTestEvent(geo = "37.386013;-122.082932")
+
+        val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
+
+        assertThat(values.getAsString(Events.SYNC_DATA7)).isEqualTo("37.386013;-122.082932")
+    }
+
+    @Test
+    fun `geo with negative coordinates stored correctly`() {
+        val event = createTestEvent(geo = "-33.8688;151.2093")
+
+        val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
+
+        assertThat(values.getAsString(Events.SYNC_DATA7)).isEqualTo("-33.8688;151.2093")
+    }
+
+    @Test
+    fun `null geo not stored`() {
+        val event = createTestEvent(geo = null)
+
+        val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
+
+        assertThat(values.containsKey(Events.SYNC_DATA7)).isFalse()
+    }
+
+    @Test
+    fun `priority and geo together stored correctly`() {
+        val event = createTestEvent(
+            priority = 2,
+            geo = "40.7128;-74.0060"
+        )
+
+        val values = CalendarContractMapper.toContentValues(event, calendarId = 1L)
+
+        assertThat(values.getAsString(Events.SYNC_DATA6)).isEqualTo("2")
+        assertThat(values.getAsString(Events.SYNC_DATA7)).isEqualTo("40.7128;-74.0060")
+    }
+
     // ==================== Helpers ====================
 
     private fun createTestEvent(
@@ -329,7 +401,9 @@ class CalendarContractMapperTest {
         exdates: List<ICalDateTime> = emptyList(),
         recurrenceId: ICalDateTime? = null,
         sequence: Int = 0,
-        organizer: Organizer? = null
+        organizer: Organizer? = null,
+        priority: Int = 0,
+        geo: String? = null
     ): ICalEvent {
         return ICalEvent(
             uid = uid,
@@ -356,6 +430,8 @@ class CalendarContractMapperTest {
             created = null,
             transparency = transparency,
             url = null,
+            priority = priority,
+            geo = geo,
             rawProperties = emptyMap()
         )
     }
