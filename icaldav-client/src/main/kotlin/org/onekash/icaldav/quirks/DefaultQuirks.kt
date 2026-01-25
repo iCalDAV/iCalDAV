@@ -74,10 +74,9 @@ class DefaultQuirks(
         for (match in responseRegex.findAll(responseBody)) {
             val responseXml = match.groupValues[1]
 
-            // Check if it's a calendar collection
-            val isCalendar = responseXml.contains("calendar", ignoreCase = true) &&
-                (responseXml.contains("resourcetype", ignoreCase = true) ||
-                    responseXml.contains("caldav", ignoreCase = true))
+            // Check if it's a calendar (has <calendar> inside <resourcetype>)
+            // Must check resourcetype specifically to avoid matching <calendar-color> etc.
+            val isCalendar = hasCalendarResourceType(responseXml)
 
             if (isCalendar) {
                 val href = extractHref(responseXml) ?: continue
@@ -282,9 +281,10 @@ class DefaultQuirks(
     }
 
     private fun extractCalendarColor(xml: String): String? {
-        // Try Apple and standard formats
+        // Match calendar-color with any namespace prefix (ic:, x1:, etc.)
+        // Examples: <ic:calendar-color>, <x1:calendar-color xmlns:x1="...">, <calendar-color>
         val patterns = listOf(
-            """<(?:ic:|IC:)?calendar-color[^>]*>([^<]+)</""",
+            """<(?:\w+:)?calendar-color[^>]*>([^<]+)</""",
             """<(?:x-)?apple-calendar-color[^>]*>([^<]+)</"""
         )
         for (pattern in patterns) {
@@ -340,5 +340,33 @@ class DefaultQuirks(
         } else {
             url.substringBefore("/")
         }
+    }
+
+    /**
+     * Check if response has calendar resourcetype.
+     *
+     * Looks specifically for <calendar.../> inside <resourcetype>.
+     * This avoids false positives from other tags like <calendar-color> which may
+     * appear in 404 propstat sections for non-calendar collections.
+     *
+     * Examples:
+     * - Calendar: <resourcetype><collection/><cal:calendar/></resourcetype>
+     * - Calendar: <resourcetype><collection/><c:calendar/></resourcetype>
+     * - Calendar: <resourcetype><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+     * - Root collection: <resourcetype><collection/></resourcetype> (no calendar)
+     */
+    private fun hasCalendarResourceType(xml: String): Boolean {
+        // Extract resourcetype element first
+        val resourceTypeRegex = Regex(
+            """<(?:d:|D:)?resourcetype[^>]*>(.*?)</(?:d:|D:)?resourcetype>""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+        val resourceTypeMatch = resourceTypeRegex.find(xml) ?: return false
+        val resourceTypeContent = resourceTypeMatch.groupValues[1]
+
+        // Check for calendar element inside resourcetype with any namespace prefix
+        // Matches: <calendar/>, <c:calendar/>, <cal:calendar/>, <C:calendar/>, etc.
+        val calendarRegex = Regex("""<(?:\w+:)?calendar[\s/>]""", RegexOption.IGNORE_CASE)
+        return calendarRegex.containsMatchIn(resourceTypeContent)
     }
 }

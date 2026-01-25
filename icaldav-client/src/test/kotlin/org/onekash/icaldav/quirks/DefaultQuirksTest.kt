@@ -687,4 +687,25 @@ END:VCALENDAR</c:calendar-data>
         assertTrue(future > System.currentTimeMillis())
         assertEquals(4102444800000L, future)
     }
+
+    // ========== Nextcloud Compatibility ==========
+
+    @Test
+    fun `extractCalendars handles Nextcloud response correctly`() {
+        // Real Nextcloud response - should only detect actual calendars, not root/inbox/outbox/trashbin
+        val response = """<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/">
+<d:response><d:href>/calendars/testuser/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><d:displayname/><cs:getctag/><x1:calendar-color xmlns:x1="http://apple.com/ns/ical/"/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>
+<d:response><d:href>/calendars/testuser/personal/</d:href><d:propstat><d:prop><d:displayname>Personal</d:displayname><d:resourcetype><d:collection/><cal:calendar/></d:resourcetype><cs:getctag>ctag-123</cs:getctag><x1:calendar-color xmlns:x1="http://apple.com/ns/ical/">#00679e</x1:calendar-color></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+<d:response><d:href>/calendars/testuser/inbox/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><cal:schedule-inbox/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+</d:multistatus>"""
+
+        val calendars = quirks.extractCalendars(response, "https://nextcloud.example.com")
+
+        // Should only find Personal calendar (root collection excluded by fix, inbox excluded by shouldSkipCalendar)
+        assertEquals(1, calendars.size)
+        assertEquals("Personal", calendars[0].displayName)
+        assertEquals("#00679e", calendars[0].color)
+        assertEquals("ctag-123", calendars[0].ctag)
+    }
 }
