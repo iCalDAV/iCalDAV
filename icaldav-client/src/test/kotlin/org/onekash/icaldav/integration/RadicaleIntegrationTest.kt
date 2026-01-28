@@ -11,6 +11,9 @@ import org.onekash.icaldav.client.DavAuth
 import org.onekash.icaldav.client.WebDavClient
 import org.onekash.icaldav.model.DavResult
 import org.onekash.icaldav.quirks.DefaultQuirks
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
@@ -134,7 +137,7 @@ class RadicaleIntegrationTest {
     }
 
     @AfterAll
-    fun cleanup() {
+    fun cleanup() = runBlocking {
         println("=== Cleaning up ${createdEventUrls.size} test events ===")
         createdEventUrls.forEach { (url, etag) ->
             try {
@@ -165,7 +168,7 @@ class RadicaleIntegrationTest {
         createdEventUrls.add(Pair(url, etag))
     }
 
-    private fun createAndTrackEvent(uid: String, icalData: String): EventCreateResult {
+    private suspend fun createAndTrackEvent(uid: String, icalData: String): EventCreateResult {
         assertNotNull(defaultCalendarUrl, "Calendar URL required")
 
         val result = calDavClient.createEventRaw(
@@ -182,14 +185,14 @@ class RadicaleIntegrationTest {
         return createResult
     }
 
-    private fun fetchAndVerify(url: String): EventWithMetadata {
+    private suspend fun fetchAndVerify(url: String): EventWithMetadata {
         val result = calDavClient.getEvent(url)
         assertTrue(result is DavResult.Success, "Should fetch event: $result")
         @Suppress("UNCHECKED_CAST")
         return (result as DavResult.Success<EventWithMetadata>).value
     }
 
-    private fun fetchAndVerifyRaw(url: String): String {
+    private suspend fun fetchAndVerifyRaw(url: String): String {
         val result = webDavClient.get(url)
         assertTrue(result is DavResult.Success, "Should fetch raw data: $result")
         @Suppress("UNCHECKED_CAST")
@@ -201,7 +204,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(1)
     @DisplayName("1. Discover principal URL")
-    fun `discover principal URL from Radicale`() {
+    fun `discover principal URL from Radicale`() = runTest {
         val caldavUrl = "$radicaleUrl"
         val result = discovery.discoverPrincipal(caldavUrl)
 
@@ -218,7 +221,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(2)
     @DisplayName("2. Discover calendar home URL")
-    fun `discover calendar home URL from principal`() {
+    fun `discover calendar home URL from principal`() = runTest {
         assertNotNull(principalUrl)
 
         val fullPrincipalUrl = if (principalUrl!!.startsWith("http")) principalUrl!!
@@ -239,7 +242,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(3)
     @DisplayName("3. List calendars")
-    fun `list calendars from calendar home`() {
+    fun `list calendars from calendar home`() = runTest {
         assertNotNull(calendarHomeUrl)
 
         val fullHomeUrl = if (calendarHomeUrl!!.startsWith("http")) calendarHomeUrl!!
@@ -269,7 +272,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(4)
     @DisplayName("4. Full discovery flow")
-    fun `full discovery flow returns complete account`() {
+    fun `full discovery flow returns complete account`() = runTest {
         val caldavUrl = "$radicaleUrl"
         val result = calDavClient.discoverAccount(caldavUrl)
 
@@ -293,7 +296,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(10)
     @DisplayName("10. Create basic event")
-    fun `create basic event on Radicale`() {
+    fun `create basic event on Radicale`() = runTest {
         val uid = generateUid("basic")
         val startTime = Instant.now().plus(30, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -327,7 +330,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(11)
     @DisplayName("11. Update event and verify ETag changes")
-    fun `update event changes ETag`() {
+    fun `update event changes ETag`() = runTest {
         val uid = generateUid("update-test")
         val startTime = Instant.now().plus(31, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -394,7 +397,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(20)
     @DisplayName("20. Create all-day event (DATE format)")
-    fun `create all-day event with DATE format`() {
+    fun `create all-day event with DATE format`() = runTest {
         val uid = generateUid("allday")
         val eventDate = LocalDate.now().plusDays(35)
         val now = Instant.now()
@@ -427,7 +430,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(21)
     @DisplayName("21. Create multi-day event")
-    fun `create multi-day spanning event`() {
+    fun `create multi-day spanning event`() = runTest {
         val uid = generateUid("multiday")
         val startDate = LocalDate.now().plusDays(40)
         val endDate = startDate.plusDays(3) // 3-day event
@@ -458,7 +461,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(22)
     @DisplayName("22. Create week-long all-day event")
-    fun `create week-long all-day event`() {
+    fun `create week-long all-day event`() = runTest {
         val uid = generateUid("weeklong")
         val startDate = LocalDate.now().plusDays(42)
         val endDate = startDate.plusDays(7) // Full week
@@ -489,7 +492,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(23)
     @DisplayName("23. Create all-day event across month boundary")
-    fun `create all-day event spanning month boundary`() {
+    fun `create all-day event spanning month boundary`() = runTest {
         val uid = generateUid("month-span")
         // Find the last day of the current month
         val startDate = LocalDate.now().withDayOfMonth(28).plusDays(5) // Will cross into next month
@@ -521,7 +524,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(24)
     @DisplayName("24. Create recurring all-day event")
-    fun `create recurring all-day event`() {
+    fun `create recurring all-day event`() = runTest {
         val uid = generateUid("recurring-allday")
         val startDate = LocalDate.now().plusDays(47)
         val now = Instant.now()
@@ -555,7 +558,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(25)
     @DisplayName("25. Create yearly recurring event (birthday/anniversary)")
-    fun `create yearly recurring event`() {
+    fun `create yearly recurring event`() = runTest {
         val uid = generateUid("yearly-recur")
         val startDate = LocalDate.now().plusDays(50)
         val now = Instant.now()
@@ -587,7 +590,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(26)
     @DisplayName("26. Create bi-weekly recurring event")
-    fun `create bi-weekly recurring event`() {
+    fun `create bi-weekly recurring event`() = runTest {
         val uid = generateUid("biweekly-recur")
         val startTime = Instant.now().plus(52, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -622,7 +625,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(30)
     @DisplayName("30. Create daily recurring event")
-    fun `create daily recurring event with COUNT`() {
+    fun `create daily recurring event with COUNT`() = runTest {
         val uid = generateUid("daily-recur")
         val startTime = Instant.now().plus(45, ChronoUnit.DAYS)
         val endTime = startTime.plus(30, ChronoUnit.MINUTES)
@@ -656,7 +659,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(31)
     @DisplayName("31. Create weekly recurring event with BYDAY")
-    fun `create weekly recurring event on specific days`() {
+    fun `create weekly recurring event on specific days`() = runTest {
         val uid = generateUid("weekly-recur")
         val startTime = Instant.now().plus(50, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -690,7 +693,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(32)
     @DisplayName("32. Create monthly recurring event")
-    fun `create monthly recurring event on specific day`() {
+    fun `create monthly recurring event on specific day`() = runTest {
         val uid = generateUid("monthly-recur")
         val startTime = Instant.now().plus(55, ChronoUnit.DAYS)
         val endTime = startTime.plus(2, ChronoUnit.HOURS)
@@ -723,7 +726,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(33)
     @DisplayName("33. Create recurring event with UNTIL date")
-    fun `create recurring event ending on specific date`() {
+    fun `create recurring event ending on specific date`() = runTest {
         val uid = generateUid("until-recur")
         val startTime = Instant.now().plus(60, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -759,7 +762,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(40)
     @DisplayName("40. Create recurring event with EXDATE (cancelled occurrence)")
-    fun `create recurring event with excluded date`() {
+    fun `create recurring event with excluded date`() = runTest {
         val uid = generateUid("exdate-recur")
         val startTime = Instant.now().plus(65, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -793,7 +796,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(41)
     @DisplayName("41. Create recurring event with modified exception (RECURRENCE-ID)")
-    fun `create recurring event with modified occurrence`() {
+    fun `create recurring event with modified occurrence`() = runTest {
         val uid = generateUid("exception-recur")
         val startTime = Instant.now().plus(70, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -838,7 +841,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(42)
     @DisplayName("42. Create recurring event with multiple EXDATE (cancelled occurrences)")
-    fun `create recurring event with multiple excluded dates`() {
+    fun `create recurring event with multiple excluded dates`() = runTest {
         val uid = generateUid("multi-exdate")
         val startTime = Instant.now().plus(72, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -873,7 +876,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(43)
     @DisplayName("43. Create exception with different title and location")
-    fun `create exception with changed properties`() {
+    fun `create exception with changed properties`() = runTest {
         val uid = generateUid("changed-exception")
         val startTime = Instant.now().plus(74, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -916,7 +919,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(44)
     @DisplayName("44. Create exception with longer duration")
-    fun `create exception with extended duration`() {
+    fun `create exception with extended duration`() = runTest {
         val uid = generateUid("extended-exception")
         val startTime = Instant.now().plus(76, ChronoUnit.DAYS)
         val endTime = startTime.plus(30, ChronoUnit.MINUTES) // 30-min standup
@@ -957,7 +960,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(45)
     @DisplayName("45. Create all-day recurring with timed exception")
-    fun `create all-day recurring with timed exception`() {
+    fun `create all-day recurring with timed exception`() = runTest {
         val uid = generateUid("allday-timed-exception")
         val startDate = LocalDate.now().plusDays(78)
         val exceptionDate = startDate.plusDays(7) // Second occurrence
@@ -1000,7 +1003,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(46)
     @DisplayName("46. Create recurring event with multiple exceptions")
-    fun `create recurring event with multiple modified occurrences`() {
+    fun `create recurring event with multiple modified occurrences`() = runTest {
         val uid = generateUid("multi-exception")
         val startTime = Instant.now().plus(80, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -1054,7 +1057,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(50)
     @DisplayName("50. Create event with explicit VTIMEZONE")
-    fun `create event with VTIMEZONE component`() {
+    fun `create event with VTIMEZONE component`() = runTest {
         val uid = generateUid("timezone")
         val now = Instant.now()
         // Use a specific local time in America/New_York
@@ -1106,7 +1109,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(60)
     @DisplayName("60. Create event with VALARM reminder")
-    fun `create event with display alarm`() {
+    fun `create event with display alarm`() = runTest {
         val uid = generateUid("alarm")
         val startTime = Instant.now().plus(75, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -1143,7 +1146,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(61)
     @DisplayName("61. Create event with multiple alarms")
-    fun `create event with multiple reminders`() {
+    fun `create event with multiple reminders`() = runTest {
         val uid = generateUid("multi-alarm")
         val startTime = Instant.now().plus(80, ChronoUnit.DAYS)
         val endTime = startTime.plus(2, ChronoUnit.HOURS)
@@ -1190,7 +1193,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(70)
     @DisplayName("70. Create event with Unicode characters")
-    fun `create event with international characters`() {
+    fun `create event with international characters`() = runTest {
         val uid = generateUid("unicode")
         val startTime = Instant.now().plus(85, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -1224,7 +1227,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(71)
     @DisplayName("71. Create event with special characters")
-    fun `create event with special iCal characters`() {
+    fun `create event with special iCal characters`() = runTest {
         val uid = generateUid("special-chars")
         val startTime = Instant.now().plus(90, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -1257,7 +1260,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(72)
     @DisplayName("72. Create event with long description")
-    fun `create event with very long description`() {
+    fun `create event with very long description`() = runTest {
         val uid = generateUid("long-desc")
         val startTime = Instant.now().plus(95, ChronoUnit.DAYS)
         val endTime = startTime.plus(3, ChronoUnit.HOURS)
@@ -1304,7 +1307,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(73)
     @DisplayName("73. Create event with URL property")
-    fun `create event with URL link`() {
+    fun `create event with URL link`() = runTest {
         val uid = generateUid("with-url")
         val startTime = Instant.now().plus(100, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -1338,7 +1341,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(80)
     @DisplayName("80. Get ctag for change detection")
-    fun `get ctag from calendar`() {
+    fun `get ctag from calendar`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val result = calDavClient.getCtag(defaultCalendarUrl!!)
@@ -1355,7 +1358,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(81)
     @DisplayName("81. Initial sync-collection (empty token)")
-    fun `initial sync collection returns all events`() {
+    fun `initial sync collection returns all events`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val result = calDavClient.syncCollection(
@@ -1383,7 +1386,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(82)
     @DisplayName("82. Incremental sync after creating new event")
-    fun `incremental sync detects new event`() {
+    fun `incremental sync detects new event`() = runTest {
         assertNotNull(defaultCalendarUrl)
         assertNotNull(lastSyncToken, "Need sync token from previous test")
 
@@ -1435,7 +1438,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(83)
     @DisplayName("83. Fetch events in date range")
-    fun `fetch events in date range`() {
+    fun `fetch events in date range`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val start = Instant.now()
@@ -1465,7 +1468,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(84)
     @DisplayName("84. Fetch events by href (calendar-multiget)")
-    fun `fetchEventsByHref returns specific events`() {
+    fun `fetchEventsByHref returns specific events`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         // Create two events
@@ -1526,7 +1529,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(85)
     @DisplayName("85. Fetch events by href with empty list")
-    fun `fetchEventsByHref with empty list returns empty result`() {
+    fun `fetchEventsByHref with empty list returns empty result`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val result = calDavClient.fetchEventsByHref(
@@ -1545,7 +1548,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(86)
     @DisplayName("86. Get sync-token from calendar")
-    fun `getSyncToken returns valid token`() {
+    fun `getSyncToken returns valid token`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val result = calDavClient.getSyncToken(defaultCalendarUrl!!)
@@ -1563,7 +1566,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(87)
     @DisplayName("87. Fetch ETags only in date range (lightweight sync)")
-    fun `fetchEtagsInRange returns etags without event data`() {
+    fun `fetchEtagsInRange returns etags without event data`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val start = Instant.now()
@@ -1595,7 +1598,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(88)
     @DisplayName("88. Delete event explicitly")
-    fun `deleteEvent removes event from calendar`() {
+    fun `deleteEvent removes event from calendar`() = runTest {
         val uid = generateUid("delete-test")
         val startTime = Instant.now().plus(107, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -1641,7 +1644,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(89)
     @DisplayName("89. Get event returns 404 for non-existent event")
-    fun `getEvent returns 404 for missing event`() {
+    fun `getEvent returns 404 for missing event`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val fakeUrl = "$defaultCalendarUrl/non-existent-event-${UUID.randomUUID()}.ics"
@@ -1669,7 +1672,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(91)
     @DisplayName("91. Create event using typed ICalEvent API")
-    fun `createEvent with ICalEvent object works or is rejected gracefully`() {
+    fun `createEvent with ICalEvent object works or is rejected gracefully`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val uid = generateUid("typed-create")
@@ -1734,7 +1737,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(92)
     @DisplayName("92. Update event using typed ICalEvent API")
-    fun `updateEvent with ICalEvent object works or is rejected gracefully`() {
+    fun `updateEvent with ICalEvent object works or is rejected gracefully`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val uid = generateUid("typed-update")
@@ -1825,7 +1828,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(93)
     @DisplayName("93. Invalid sync token returns error (410 Gone or similar)")
-    fun `syncCollection with invalid token returns error`() {
+    fun `syncCollection with invalid token returns error`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         // Use a completely fake sync token
@@ -1855,7 +1858,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(94)
     @DisplayName("94. Delete event with wrong ETag fails")
-    fun `deleteEvent with wrong etag fails`() {
+    fun `deleteEvent with wrong etag fails`() = runTest {
         val uid = generateUid("delete-conflict")
         val startTime = Instant.now().plus(117, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -1902,7 +1905,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(95)
     @DisplayName("95. CalDavClient.forProvider factory works")
-    fun `forProvider factory creates working client`() {
+    fun `forProvider factory creates working client`() = runTest {
         val providerClient = CalDavClient.forProvider(
             serverUrl = radicaleUrl,
             username = username,
@@ -1923,7 +1926,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(96)
     @DisplayName("96. buildEventUrl sanitizes UID correctly")
-    fun `buildEventUrl creates safe URLs`() {
+    fun `buildEventUrl creates safe URLs`() = runTest {
         val calendarUrl = "http://example.com/calendars/user/calendar"
 
         // Test normal UID
@@ -1946,7 +1949,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(90)
     @DisplayName("90. ETag conflict detection (concurrent modification)")
-    fun `etag mismatch prevents update`() {
+    fun `etag mismatch prevents update`() = runTest {
         val uid = generateUid("etag-conflict")
         val startTime = Instant.now().plus(110, ChronoUnit.DAYS)
         val endTime = startTime.plus(1, ChronoUnit.HOURS)
@@ -2011,7 +2014,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(100)
     @DisplayName("100. Fetch events from non-existent calendar returns error")
-    fun `fetchEvents from invalid calendar URL fails`() {
+    fun `fetchEvents from invalid calendar URL fails`() = runTest {
         val fakeCalendarUrl = "$radicaleUrl/calendars/$username/non-existent-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.fetchEvents(
@@ -2038,7 +2041,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(101)
     @DisplayName("101. Create event with duplicate UID fails (If-None-Match)")
-    fun `createEventRaw with duplicate UID fails`() {
+    fun `createEventRaw with duplicate UID fails`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val uid = generateUid("duplicate-test")
@@ -2095,7 +2098,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(102)
     @DisplayName("102. Update non-existent event fails")
-    fun `updateEventRaw on non-existent URL fails`() {
+    fun `updateEventRaw on non-existent URL fails`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val fakeUrl = "$defaultCalendarUrl/fake-event-${UUID.randomUUID()}.ics"
@@ -2128,7 +2131,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(103)
     @DisplayName("103. Delete non-existent event (server-dependent)")
-    fun `deleteEvent on non-existent URL handles gracefully`() {
+    fun `deleteEvent on non-existent URL handles gracefully`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val fakeUrl = "$defaultCalendarUrl/non-existent-event-${UUID.randomUUID()}.ics"
@@ -2154,7 +2157,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(104)
     @DisplayName("104. Get ctag from non-existent calendar fails")
-    fun `getCtag from invalid calendar fails`() {
+    fun `getCtag from invalid calendar fails`() = runTest {
         val fakeCalendarUrl = "$radicaleUrl/calendars/$username/fake-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.getCtag(fakeCalendarUrl)
@@ -2170,7 +2173,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(105)
     @DisplayName("105. syncCollection on non-existent calendar fails")
-    fun `syncCollection from invalid calendar fails`() {
+    fun `syncCollection from invalid calendar fails`() = runTest {
         val fakeCalendarUrl = "$radicaleUrl/calendars/$username/fake-sync-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.syncCollection(fakeCalendarUrl, "")
@@ -2186,7 +2189,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(106)
     @DisplayName("106. fetchEventsByHref with non-existent href returns empty/error")
-    fun `fetchEventsByHref with invalid hrefs handles gracefully`() {
+    fun `fetchEventsByHref with invalid hrefs handles gracefully`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val fakeHrefs = listOf(
@@ -2212,7 +2215,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(107)
     @DisplayName("107. fetchEtagsInRange on non-existent calendar fails")
-    fun `fetchEtagsInRange from invalid calendar fails`() {
+    fun `fetchEtagsInRange from invalid calendar fails`() = runTest {
         val fakeCalendarUrl = "$radicaleUrl/calendars/$username/fake-etag-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.fetchEtagsInRange(
@@ -2232,7 +2235,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(108)
     @DisplayName("108. getSyncToken from non-existent calendar fails")
-    fun `getSyncToken from invalid calendar fails`() {
+    fun `getSyncToken from invalid calendar fails`() = runTest {
         val fakeCalendarUrl = "$radicaleUrl/calendars/$username/fake-token-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.getSyncToken(fakeCalendarUrl)
@@ -2248,7 +2251,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(109)
     @DisplayName("109. Invalid authentication fails")
-    fun `client with wrong credentials fails`() {
+    fun `client with wrong credentials fails`() = runTest {
         val badClient = CalDavClient.withBasicAuth("wronguser", "wrongpassword123")
 
         val result = badClient.getCtag(defaultCalendarUrl!!)
@@ -2271,14 +2274,22 @@ class RadicaleIntegrationTest {
     @Test
     @Order(110)
     @DisplayName("110. Discovery with invalid URL fails gracefully")
-    fun `discoverAccount with bad URL fails gracefully`() {
+    fun `discoverAccount with bad URL fails gracefully`() = runTest {
         // Use a URL that will fail to connect, not an invalid port
-        val result = try {
-            calDavClient.discoverAccount("http://192.0.2.1/nonexistent")  // TEST-NET-1 (RFC 5737) - will timeout/fail
-        } catch (e: IllegalArgumentException) {
-            // OkHttp may throw for malformed URLs before making request
-            println("URL validation failed: ${e.message}")
-            return // Test passes - invalid URL was rejected
+        // Wrap in timeout to avoid UncompletedCoroutinesError when OkHttp takes too long
+        val result = withTimeoutOrNull(10_000) {
+            try {
+                calDavClient.discoverAccount("http://192.0.2.1/nonexistent")  // TEST-NET-1 (RFC 5737) - will timeout/fail
+            } catch (e: IllegalArgumentException) {
+                // OkHttp may throw for malformed URLs before making request
+                println("URL validation failed: ${e.message}")
+                null
+            }
+        }
+
+        if (result == null) {
+            println("Discovery timed out or URL was rejected - test passes")
+            return@runTest
         }
 
         println("Discovery with invalid URL: $result")
@@ -2292,7 +2303,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(111)
     @DisplayName("111. Concurrent updates demonstrate ETag conflict")
-    fun `concurrent updates show conflict detection`() {
+    fun `concurrent updates show conflict detection`() = runTest {
         val uid = generateUid("concurrent")
         val startTime = Instant.now().plus(125, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2379,7 +2390,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(112)
     @DisplayName("112. Empty UID throws IllegalArgumentException")
-    fun `buildEventUrl rejects empty UID`() {
+    fun `buildEventUrl rejects empty UID`() = runTest {
         val calendarUrl = "http://example.com/calendars/user/calendar"
 
         val exception = assertThrows<IllegalArgumentException> {
@@ -2393,7 +2404,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(113)
     @DisplayName("113. UID with only dots throws IllegalArgumentException")
-    fun `buildEventUrl rejects dots-only UID`() {
+    fun `buildEventUrl rejects dots-only UID`() = runTest {
         val calendarUrl = "http://example.com/calendars/user/calendar"
 
         val exception = assertThrows<IllegalArgumentException> {
@@ -2406,7 +2417,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(114)
     @DisplayName("114. Create event with minimal valid data")
-    fun `createEvent with minimal ICalEvent succeeds or rejects gracefully`() {
+    fun `createEvent with minimal ICalEvent succeeds or rejects gracefully`() = runTest {
         assertNotNull(defaultCalendarUrl)
 
         val uid = generateUid("minimal")
@@ -2465,7 +2476,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(115)
     @DisplayName("115. Very long summary is handled")
-    fun `event with very long summary is handled`() {
+    fun `event with very long summary is handled`() = runTest {
         val uid = generateUid("long-summary")
         val startTime = Instant.now().plus(135, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2502,7 +2513,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(95)
     @DisplayName("95. DefaultQuirks parses real Radicale discovery")
-    fun `DefaultQuirks works with real Radicale responses`() {
+    fun `DefaultQuirks works with real Radicale responses`() = runTest {
         assertNotNull(principalUrl)
         assertNotNull(calendarHomeUrl)
         assertNotNull(defaultCalendarUrl)
@@ -2519,7 +2530,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(96)
     @DisplayName("96. DefaultQuirks calendar properties are correct")
-    fun `DefaultQuirks extracts calendar properties correctly`() {
+    fun `DefaultQuirks extracts calendar properties correctly`() = runTest {
         assertNotNull(calendarHomeUrl)
 
         val fullHomeUrl = if (calendarHomeUrl!!.startsWith("http")) calendarHomeUrl!!
@@ -2550,7 +2561,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(120)
     @DisplayName("120. Event with COLOR property (RFC 7986)")
-    fun `event with COLOR property`() {
+    fun `event with COLOR property`() = runTest {
         val uid = generateUid("color")
         val startTime = Instant.now().plus(140, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2581,7 +2592,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(121)
     @DisplayName("121. Event with IMAGE property (RFC 7986)")
-    fun `event with IMAGE property`() {
+    fun `event with IMAGE property`() = runTest {
         val uid = generateUid("image")
         val startTime = Instant.now().plus(141, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2608,7 +2619,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(122)
     @DisplayName("122. Event with CONFERENCE property (RFC 7986)")
-    fun `event with CONFERENCE property`() {
+    fun `event with CONFERENCE property`() = runTest {
         val uid = generateUid("conference")
         val startTime = Instant.now().plus(142, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2635,7 +2646,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(123)
     @DisplayName("123. Event with CATEGORIES property")
-    fun `event with CATEGORIES property`() {
+    fun `event with CATEGORIES property`() = runTest {
         val uid = generateUid("categories")
         val startTime = Instant.now().plus(143, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2667,7 +2678,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(124)
     @DisplayName("124. Event with LINK property (RFC 9253)")
-    fun `event with LINK property`() {
+    fun `event with LINK property`() = runTest {
         val uid = generateUid("link-prop")
         val startTime = Instant.now().plus(144, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2703,7 +2714,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(125)
     @DisplayName("125. Event with multiple LINK properties (RFC 9253)")
-    fun `event with multiple LINK properties`() {
+    fun `event with multiple LINK properties`() = runTest {
         val uid = generateUid("multi-link")
         val startTime = Instant.now().plus(145, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2737,7 +2748,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(126)
     @DisplayName("126. Event with RELATED-TO properties (RFC 9253)")
-    fun `event with RELATED-TO properties`() {
+    fun `event with RELATED-TO properties`() = runTest {
         val uid = generateUid("related-to")
         val startTime = Instant.now().plus(146, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2771,7 +2782,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(127)
     @DisplayName("127. LINK property survives roundtrip (RFC 9253)")
-    fun `LINK property survives roundtrip`() {
+    fun `LINK property survives roundtrip`() = runTest {
         val uid = generateUid("link-roundtrip")
         val startTime = Instant.now().plus(147, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2812,7 +2823,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(128)
     @DisplayName("128. RELATED-TO property survives roundtrip (RFC 9253)")
-    fun `RELATED-TO property survives roundtrip`() {
+    fun `RELATED-TO property survives roundtrip`() = runTest {
         val uid = generateUid("related-roundtrip")
         val startTime = Instant.now().plus(148, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2854,7 +2865,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(130)
     @DisplayName("130. Event with ORGANIZER property")
-    fun `event with ORGANIZER property`() {
+    fun `event with ORGANIZER property`() = runTest {
         val uid = generateUid("organizer")
         val startTime = Instant.now().plus(150, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2884,7 +2895,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(131)
     @DisplayName("131. Event with ATTENDEE properties")
-    fun `event with ATTENDEE properties`() {
+    fun `event with ATTENDEE properties`() = runTest {
         val uid = generateUid("attendees")
         val startTime = Instant.now().plus(151, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2920,7 +2931,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(132)
     @DisplayName("132. Event with ORGANIZER and SENT-BY")
-    fun `event with ORGANIZER SENT-BY`() {
+    fun `event with ORGANIZER SENT-BY`() = runTest {
         val uid = generateUid("sent-by")
         val startTime = Instant.now().plus(152, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2949,7 +2960,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(140)
     @DisplayName("140. Event with DURATION instead of DTEND")
-    fun `event with DURATION property`() {
+    fun `event with DURATION property`() = runTest {
         val uid = generateUid("duration")
         val startTime = Instant.now().plus(160, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -2979,7 +2990,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(141)
     @DisplayName("141. Event spanning DST transition (spring forward)")
-    fun `event spanning DST transition`() {
+    fun `event spanning DST transition`() = runTest {
         val uid = generateUid("dst-spring")
         val now = Instant.now()
 
@@ -3021,7 +3032,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(142)
     @DisplayName("142. Event with emoji in summary (multi-byte UTF-8)")
-    fun `event with emoji in summary`() {
+    fun `event with emoji in summary`() = runTest {
         val uid = generateUid("emoji")
         val startTime = Instant.now().plus(162, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3056,7 +3067,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(143)
     @DisplayName("143. Event requiring line folding (>75 octets)")
-    fun `event requiring line folding`() {
+    fun `event requiring line folding`() = runTest {
         val uid = generateUid("folding")
         val startTime = Instant.now().plus(163, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3088,7 +3099,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(144)
     @DisplayName("144. Event with emoji requiring line folding")
-    fun `event with emoji requiring line folding`() {
+    fun `event with emoji requiring line folding`() = runTest {
         val uid = generateUid("emoji-fold")
         val startTime = Instant.now().plus(164, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3120,7 +3131,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(145)
     @DisplayName("145. Event with zero-duration (point in time)")
-    fun `event with zero duration`() {
+    fun `event with zero duration`() = runTest {
         val uid = generateUid("zero-dur")
         val startTime = Instant.now().plus(165, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3146,7 +3157,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(146)
     @DisplayName("146. Recurring event with both EXDATE and modified exception")
-    fun `recurring with EXDATE and exception`() {
+    fun `recurring with EXDATE and exception`() = runTest {
         val uid = generateUid("exdate-exception")
         val startTime = Instant.now().plus(166, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
             .plus(10, ChronoUnit.HOURS)
@@ -3187,7 +3198,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(147)
     @DisplayName("147. Event with complex RRULE (10+ BYDAY values)")
-    fun `event with complex RRULE`() {
+    fun `event with complex RRULE`() = runTest {
         val uid = generateUid("complex-rrule")
         val startTime = Instant.now().plus(167, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
             .plus(9, ChronoUnit.HOURS)
@@ -3221,7 +3232,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(150)
     @DisplayName("150. Sync empty calendar")
-    fun `sync empty calendar`() {
+    fun `sync empty calendar`() = runTest {
         // Create a new empty calendar for this test (if Radicale supports it)
         // Otherwise use a time range with no events
         val farFuture = Instant.now().plus(3650, ChronoUnit.DAYS) // 10 years out
@@ -3248,7 +3259,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(151)
     @DisplayName("151. Rapid successive changes trigger sync correctly")
-    fun `rapid successive changes`() {
+    fun `rapid successive changes`() = runTest {
         val baseUid = generateUid("rapid")
         val now = Instant.now()
         val startTime = Instant.now().plus(180, ChronoUnit.DAYS)
@@ -3300,7 +3311,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(152)
     @DisplayName("152. Large multiget (50 hrefs)")
-    fun `large multiget request`() {
+    fun `large multiget request`() = runTest {
         // Create 50 events for testing
         val baseUid = generateUid("multiget")
         val now = Instant.now()
@@ -3345,7 +3356,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(153)
     @DisplayName("153. Detect deleted recurring event")
-    fun `detect deleted recurring event`() {
+    fun `detect deleted recurring event`() = runTest {
         val uid = generateUid("del-recur")
         val now = Instant.now()
         val startTime = Instant.now().plus(220, ChronoUnit.DAYS)
@@ -3395,7 +3406,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(154)
     @DisplayName("154. Fetch ETags only for large range")
-    fun `fetch etags only for efficiency`() {
+    fun `fetch etags only for efficiency`() = runTest {
         val start = Instant.now().minus(365, ChronoUnit.DAYS)
         val end = Instant.now().plus(365, ChronoUnit.DAYS)
 
@@ -3415,7 +3426,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(155)
     @DisplayName("155. Sync with limit parameter (if supported)")
-    fun `sync handles server limits`() {
+    fun `sync handles server limits`() = runTest {
         // Some servers may impose limits on sync-collection responses
         val result = calDavClient.syncCollection(defaultCalendarUrl!!, "")
 
@@ -3439,7 +3450,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(160)
     @DisplayName("160. MKCALENDAR - create new calendar (if supported)")
-    fun `create new calendar via MKCALENDAR`() {
+    fun `create new calendar via MKCALENDAR`() = runTest {
         // This may not be supported by all servers
         val newCalendarName = "test-calendar-${UUID.randomUUID().toString().take(8)}"
         val newCalendarUrl = "$calendarHomeUrl$newCalendarName/"
@@ -3452,7 +3463,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(161)
     @DisplayName("161. PROPPATCH calendar properties (if supported)")
-    fun `update calendar properties`() {
+    fun `update calendar properties`() = runTest {
         // Would need PROPPATCH support
         println("PROPPATCH test skipped - not implemented in client")
     }
@@ -3460,7 +3471,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(162)
     @DisplayName("162. List calendars shows expected properties")
-    fun `calendar listing includes all properties`() {
+    fun `calendar listing includes all properties`() = runTest {
         // Use the CalDAV endpoint, not the base URL (Radicale returns 405 on base)
         val caldavUrl = "$radicaleUrl"
         val result = calDavClient.discoverAccount(caldavUrl)
@@ -3497,7 +3508,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(170)
     @DisplayName("170. Event with unknown X- properties preserved")
-    fun `unknown X properties preserved`() {
+    fun `unknown X properties preserved`() = runTest {
         val uid = generateUid("x-props")
         val startTime = Instant.now().plus(250, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3530,7 +3541,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(171)
     @DisplayName("171. Multiple VEVENTs in single VCALENDAR (recurring with exceptions)")
-    fun `multiple VEVENTs in one VCALENDAR`() {
+    fun `multiple VEVENTs in one VCALENDAR`() = runTest {
         val uid = generateUid("multi-vevent")
         val startTime = Instant.now().plus(260, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
             .plus(14, ChronoUnit.HOURS)
@@ -3577,7 +3588,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(172)
     @DisplayName("172. Event with escaped characters in all text fields")
-    fun `escaped characters in all fields`() {
+    fun `escaped characters in all fields`() = runTest {
         val uid = generateUid("escaped")
         val startTime = Instant.now().plus(270, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3611,7 +3622,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(173)
     @DisplayName("173. Very long description (5000+ chars)")
-    fun `very long description`() {
+    fun `very long description`() = runTest {
         val uid = generateUid("very-long-desc")
         val startTime = Instant.now().plus(280, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3650,7 +3661,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(174)
     @DisplayName("174. Event with ATTACH property (URL)")
-    fun `event with ATTACH property`() {
+    fun `event with ATTACH property`() = runTest {
         val uid = generateUid("attach")
         val startTime = Instant.now().plus(290, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3677,7 +3688,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(175)
     @DisplayName("175. Event with GEO property (latitude/longitude)")
-    fun `event with GEO property`() {
+    fun `event with GEO property`() = runTest {
         val uid = generateUid("geo")
         val startTime = Instant.now().plus(300, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3707,7 +3718,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(180)
     @DisplayName("180. PUT with Content-Type validation")
-    fun `PUT requires correct Content-Type`() {
+    fun `PUT requires correct Content-Type`() = runTest {
         // Our client already sets text/calendar, so this tests the inverse case
         // by verifying that our events are created successfully with correct type
         val uid = generateUid("content-type")
@@ -3735,7 +3746,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(181)
     @DisplayName("181. Event UID must match filename")
-    fun `event UID matches filename`() {
+    fun `event UID matches filename`() = runTest {
         val uid = generateUid("uid-filename")
         val startTime = Instant.now().plus(320, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3767,7 +3778,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(182)
     @DisplayName("182. PROPFIND Depth:0 vs Depth:1")
-    fun `PROPFIND depth behavior`() {
+    fun `PROPFIND depth behavior`() = runTest {
         // Depth:0 should return only the calendar, not events
         val ctagResult = calDavClient.getCtag(defaultCalendarUrl!!)
         assertTrue(ctagResult is DavResult.Success, "Depth:0 PROPFIND should work")
@@ -3786,7 +3797,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(183)
     @DisplayName("183. Calendar-query with time-range filter")
-    fun `calendar query time range filter`() {
+    fun `calendar query time range filter`() = runTest {
         // Create events at specific times
         val uid1 = generateUid("timerange-1")
         val uid2 = generateUid("timerange-2")
@@ -3852,7 +3863,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(184)
     @DisplayName("184. Event with PRIORITY property")
-    fun `event with PRIORITY property`() {
+    fun `event with PRIORITY property`() = runTest {
         val uid = generateUid("priority")
         val startTime = Instant.now().plus(360, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3879,7 +3890,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(185)
     @DisplayName("185. Event with CLASS property (PUBLIC/PRIVATE/CONFIDENTIAL)")
-    fun `event with CLASS property`() {
+    fun `event with CLASS property`() = runTest {
         val uid = generateUid("class")
         val startTime = Instant.now().plus(370, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3906,7 +3917,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(186)
     @DisplayName("186. Event with TRANSP:TRANSPARENT")
-    fun `event with TRANSP TRANSPARENT`() {
+    fun `event with TRANSP TRANSPARENT`() = runTest {
         val uid = generateUid("transp")
         val startTime = Instant.now().plus(380, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -3936,7 +3947,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(187)
     @DisplayName("187. Event STATUS variations (TENTATIVE, CANCELLED)")
-    fun `event STATUS variations`() {
+    fun `event STATUS variations`() = runTest {
         val now = Instant.now()
         val startTime = Instant.now().plus(390, ChronoUnit.DAYS)
 
@@ -3982,7 +3993,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(188)
     @DisplayName("188. VALARM with EMAIL action")
-    fun `VALARM with EMAIL action`() {
+    fun `VALARM with EMAIL action`() = runTest {
         val uid = generateUid("email-alarm")
         val startTime = Instant.now().plus(400, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4015,7 +4026,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(189)
     @DisplayName("189. VALARM with AUDIO action")
-    fun `VALARM with AUDIO action`() {
+    fun `VALARM with AUDIO action`() = runTest {
         val uid = generateUid("audio-alarm")
         val startTime = Instant.now().plus(410, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4045,7 +4056,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(190)
     @DisplayName("190. VALARM with absolute trigger time")
-    fun `VALARM with absolute trigger`() {
+    fun `VALARM with absolute trigger`() = runTest {
         val uid = generateUid("abs-alarm")
         val startTime = Instant.now().plus(420, ChronoUnit.DAYS)
         val alarmTime = startTime.minus(1, ChronoUnit.DAYS)
@@ -4077,7 +4088,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(191)
     @DisplayName("191. Recurring event with BYMONTHDAY")
-    fun `recurring event with BYMONTHDAY`() {
+    fun `recurring event with BYMONTHDAY`() = runTest {
         val uid = generateUid("bymonthday")
         val startTime = Instant.now().plus(430, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4104,7 +4115,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(192)
     @DisplayName("192. Recurring event with BYHOUR and BYMINUTE")
-    fun `recurring event with BYHOUR BYMINUTE`() {
+    fun `recurring event with BYHOUR BYMINUTE`() = runTest {
         val uid = generateUid("byhour")
         val startTime = Instant.now().plus(440, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4131,7 +4142,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(193)
     @DisplayName("193. Recurring event with negative BYDAY (last Monday)")
-    fun `recurring event with negative BYDAY`() {
+    fun `recurring event with negative BYDAY`() = runTest {
         val uid = generateUid("neg-byday")
         val startTime = Instant.now().plus(450, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4158,7 +4169,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(194)
     @DisplayName("194. Event with RDATE (additional occurrences)")
-    fun `event with RDATE`() {
+    fun `event with RDATE`() = runTest {
         val uid = generateUid("rdate")
         val startTime = Instant.now().plus(460, ChronoUnit.DAYS)
         val rdate1 = startTime.plus(3, ChronoUnit.DAYS)
@@ -4187,7 +4198,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(195)
     @DisplayName("195. All-day recurring event with timezone consideration")
-    fun `all-day recurring with timezone`() {
+    fun `all-day recurring with timezone`() = runTest {
         val uid = generateUid("allday-tz")
         val now = Instant.now()
 
@@ -4216,7 +4227,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(200)
     @DisplayName("200. Exception bundling - master + exceptions in single VCALENDAR")
-    fun `exception bundling for CalDAV PUT`() {
+    fun `exception bundling for CalDAV PUT`() = runTest {
         val uid = generateUid("exception-bundle")
         val now = Instant.now()
         val startTime = Instant.now().plus(500, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
@@ -4282,7 +4293,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(201)
     @DisplayName("201. VALARM duration format variations")
-    fun `VALARM with various duration formats`() {
+    fun `VALARM with various duration formats`() = runTest {
         val uid = generateUid("alarm-formats")
         val startTime = Instant.now().plus(510, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4345,7 +4356,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(202)
     @DisplayName("202. All-day DTEND exclusive handling (RFC 5545)")
-    fun `all-day DTEND exclusive date handling`() {
+    fun `all-day DTEND exclusive date handling`() = runTest {
         val uid = generateUid("allday-dtend")
         val now = Instant.now()
 
@@ -4381,7 +4392,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(203)
     @DisplayName("203. Duplicate href deduplication in multiget")
-    fun `multiget with duplicate hrefs deduplicates`() {
+    fun `multiget with duplicate hrefs deduplicates`() = runTest {
         val uid = generateUid("dedup-test")
         val startTime = Instant.now().plus(520, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4427,7 +4438,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(204)
     @DisplayName("204. Multiget with mix of valid and non-existent hrefs")
-    fun `multiget partial success with missing hrefs`() {
+    fun `multiget partial success with missing hrefs`() = runTest {
         // Create one valid event
         val uid = generateUid("partial-multiget")
         val startTime = Instant.now().plus(530, ChronoUnit.DAYS)
@@ -4477,7 +4488,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(205)
     @DisplayName("205. RECURRENCE-ID format variations")
-    fun `RECURRENCE-ID with different datetime formats`() {
+    fun `RECURRENCE-ID with different datetime formats`() = runTest {
         val uid = generateUid("recid-formats")
         val now = Instant.now()
 
@@ -4512,7 +4523,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(206)
     @DisplayName("206. X-APPLE vendor properties round-trip")
-    fun `X-APPLE properties preserved`() {
+    fun `X-APPLE properties preserved`() = runTest {
         val uid = generateUid("x-apple")
         val startTime = Instant.now().plus(540, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4548,7 +4559,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(207)
     @DisplayName("207. EXDATE with multiple dates")
-    fun `EXDATE with comma-separated dates`() {
+    fun `EXDATE with comma-separated dates`() = runTest {
         val uid = generateUid("comma-sep-exdate")
         val now = Instant.now()
         val startTime = Instant.now().plus(550, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
@@ -4586,7 +4597,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(208)
     @DisplayName("208. SEQUENCE increment on update")
-    fun `SEQUENCE property increments on update`() {
+    fun `SEQUENCE property increments on update`() = runTest {
         val uid = generateUid("sequence")
         val startTime = Instant.now().plus(560, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4646,7 +4657,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(209)
     @DisplayName("209. Timezone with VTIMEZONE component")
-    fun `event with full VTIMEZONE component`() {
+    fun `event with full VTIMEZONE component`() = runTest {
         val uid = generateUid("full-tz")
         val now = Instant.now()
 
@@ -4692,7 +4703,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(210)
     @DisplayName("210. Event with LOCATION containing special characters")
-    fun `location with address and special chars`() {
+    fun `location with address and special chars`() = runTest {
         val uid = generateUid("location-special")
         val startTime = Instant.now().plus(570, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -4726,7 +4737,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(211)
     @DisplayName("211. Floating time event (no timezone)")
-    fun `floating time event without timezone`() {
+    fun `floating time event without timezone`() = runTest {
         val uid = generateUid("floating-time")
         val now = Instant.now()
 
@@ -4766,7 +4777,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(212)
     @DisplayName("212. RRULE with WKST (week start day)")
-    fun `RRULE with WKST week start day`() {
+    fun `RRULE with WKST week start day`() = runTest {
         val uid = generateUid("wkst-rule")
         val now = Instant.now()
 
@@ -4798,7 +4809,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(213)
     @DisplayName("213. RRULE with BYSETPOS (nth occurrence)")
-    fun `RRULE with BYSETPOS for nth occurrence`() {
+    fun `RRULE with BYSETPOS for nth occurrence`() = runTest {
         val uid = generateUid("bysetpos-rule")
         val now = Instant.now()
 
@@ -4830,7 +4841,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(214)
     @DisplayName("214. RRULE with negative BYSETPOS (last weekday)")
-    fun `RRULE with negative BYSETPOS for last weekday`() {
+    fun `RRULE with negative BYSETPOS for last weekday`() = runTest {
         val uid = generateUid("bysetpos-neg")
         val now = Instant.now()
 
@@ -4860,7 +4871,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(215)
     @DisplayName("215. Leap year handling (Feb 29)")
-    fun `leap year event on February 29`() {
+    fun `leap year event on February 29`() = runTest {
         val uid = generateUid("leap-year")
         val now = Instant.now()
 
@@ -4892,7 +4903,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(216)
     @DisplayName("216. Yearly recurring event on leap day")
-    fun `yearly recurring event on leap day`() {
+    fun `yearly recurring event on leap day`() = runTest {
         val uid = generateUid("leap-yearly")
         val now = Instant.now()
 
@@ -4923,7 +4934,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(217)
     @DisplayName("217. Well-known CalDAV URL discovery")
-    fun `well-known caldav URL redirect`() {
+    fun `well-known caldav URL redirect`() = runTest {
         // RFC 6764: CalDAV servers SHOULD provide /.well-known/caldav
         // which redirects to the actual CalDAV endpoint
         val wellKnownUrl = radicaleUrl.trimEnd('/') + "/.well-known/caldav"
@@ -4957,7 +4968,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(218)
     @DisplayName("218. VALARM with ACKNOWLEDGED property (RFC 9074)")
-    fun `VALARM with ACKNOWLEDGED property`() {
+    fun `VALARM with ACKNOWLEDGED property`() = runTest {
         val uid = generateUid("ack-alarm")
         val startTime = Instant.now().plus(580, ChronoUnit.DAYS)
         val acknowledgedTime = Instant.now()
@@ -4999,7 +5010,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(219)
     @DisplayName("219. VALARM with RELATED-TO (snooze chain)")
-    fun `VALARM with RELATED-TO for snooze`() {
+    fun `VALARM with RELATED-TO for snooze`() = runTest {
         val uid = generateUid("snooze-alarm")
         val startTime = Instant.now().plus(590, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -5048,7 +5059,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(220)
     @DisplayName("220. Far future event (year 2099)")
-    fun `far future event year 2099`() {
+    fun `far future event year 2099`() = runTest {
         val uid = generateUid("far-future")
         val now = Instant.now()
 
@@ -5080,7 +5091,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(221)
     @DisplayName("221. Midnight-spanning event (11 PM to 1 AM)")
-    fun `event spanning midnight`() {
+    fun `event spanning midnight`() = runTest {
         val uid = generateUid("midnight-span")
         val now = Instant.now()
 
@@ -5111,7 +5122,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(222)
     @DisplayName("222. Year boundary event (Dec 31 to Jan 1)")
-    fun `event spanning year boundary`() {
+    fun `event spanning year boundary`() = runTest {
         val uid = generateUid("year-boundary")
         val now = Instant.now()
 
@@ -5142,7 +5153,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(223)
     @DisplayName("223. RRULE with BYWEEKNO (week number recurrence)")
-    fun `RRULE with BYWEEKNO for quarterly reviews`() {
+    fun `RRULE with BYWEEKNO for quarterly reviews`() = runTest {
         val uid = generateUid("byweekno")
         val now = Instant.now()
 
@@ -5172,7 +5183,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(224)
     @DisplayName("224. Very short event (1 minute)")
-    fun `very short 1 minute event`() {
+    fun `very short 1 minute event`() = runTest {
         val uid = generateUid("short-event")
         val startTime = Instant.now().plus(600, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -5202,7 +5213,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(225)
     @DisplayName("225. Past event (historical)")
-    fun `past event in history`() {
+    fun `past event in history`() = runTest {
         val uid = generateUid("past-event")
         val now = Instant.now()
 
@@ -5232,7 +5243,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(226)
     @DisplayName("226. RRULE with UNTIL as DATE (not datetime)")
-    fun `RRULE with UNTIL as DATE format`() {
+    fun `RRULE with UNTIL as DATE format`() = runTest {
         val uid = generateUid("until-date")
         val now = Instant.now()
 
@@ -5262,7 +5273,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(227)
     @DisplayName("227. Event with CREATED and LAST-MODIFIED timestamps")
-    fun `event with creation and modification timestamps`() {
+    fun `event with creation and modification timestamps`() = runTest {
         val uid = generateUid("timestamps")
         val now = Instant.now()
         val createdTime = now.minus(30, ChronoUnit.DAYS)
@@ -5298,7 +5309,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(228)
     @DisplayName("228. Event with all RFC 5545 status values")
-    fun `event status lifecycle TENTATIVE to CONFIRMED to CANCELLED`() {
+    fun `event status lifecycle TENTATIVE to CONFIRMED to CANCELLED`() = runTest {
         val now = Instant.now()
         val startTime = Instant.now().plus(620, ChronoUnit.DAYS)
 
@@ -5328,7 +5339,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(229)
     @DisplayName("229. Multi-month all-day event")
-    fun `multi-month all-day event spanning 3 months`() {
+    fun `multi-month all-day event spanning 3 months`() = runTest {
         val uid = generateUid("multi-month")
         val now = Instant.now()
 
@@ -5360,7 +5371,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(230)
     @DisplayName("230. Event exactly at DST transition time")
-    fun `event at exact DST spring forward time`() {
+    fun `event at exact DST spring forward time`() = runTest {
         val uid = generateUid("dst-exact")
         val now = Instant.now()
 
@@ -5409,7 +5420,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(231)
     @DisplayName("231. Time-range query expanding recurring event instances")
-    fun `time-range query expands recurring instances`() {
+    fun `time-range query expands recurring instances`() = runTest {
         // Create a weekly recurring event
         val uid = generateUid("recur-expand")
         val now = Instant.now()
@@ -5457,7 +5468,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(232)
     @DisplayName("232. Event with both RRULE and RDATE")
-    fun `event with RRULE and RDATE combined`() {
+    fun `event with RRULE and RDATE combined`() = runTest {
         val uid = generateUid("rrule-rdate")
         val now = Instant.now()
 
@@ -5489,7 +5500,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(233)
     @DisplayName("233. Conditional GET with If-None-Match (304 Not Modified)")
-    fun `conditional GET returns 304 when ETag matches`() {
+    fun `conditional GET returns 304 when ETag matches`() = runTest {
         // Create an event first
         val uid = generateUid("conditional-get")
         val startTime = Instant.now().plus(630, ChronoUnit.DAYS)
@@ -5540,7 +5551,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(234)
     @DisplayName("234. OPTIONS request for DAV capabilities")
-    fun `OPTIONS request returns DAV capabilities`() {
+    fun `OPTIONS request returns DAV capabilities`() = runTest {
         val client = okhttp3.OkHttpClient()
         val credentials = okhttp3.Credentials.basic(username, password)
 
@@ -5572,7 +5583,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(235)
     @DisplayName("235. Invalid iCalendar data rejection (precondition)")
-    fun `server rejects invalid iCalendar data`() {
+    fun `server rejects invalid iCalendar data`() = runTest {
         val uid = generateUid("invalid-ical")
 
         // Malformed iCalendar - missing required properties
@@ -5613,7 +5624,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(236)
     @DisplayName("236. Wrong content-type rejection")
-    fun `server rejects non-iCalendar content type`() {
+    fun `server rejects non-iCalendar content type`() = runTest {
         val uid = generateUid("wrong-content")
         val eventUrl = "$defaultCalendarUrl/$uid.ics"
 
@@ -5644,7 +5655,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(237)
     @DisplayName("237. Calendar-query with UID filter (prop-filter)")
-    fun `calendar-query filters by UID`() {
+    fun `calendar-query filters by UID`() = runTest {
         // Create a known event
         val uid = generateUid("uid-filter-test")
         val startTime = Instant.now().plus(640, ChronoUnit.DAYS)
@@ -5683,7 +5694,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(238)
     @DisplayName("238. Sync-collection with limit parameter")
-    fun `sync-collection respects result limits`() {
+    fun `sync-collection respects result limits`() = runTest {
         // Test that sync-collection can handle limits
         // Most servers return all results, but some support DAV:limit
         val result = calDavClient.syncCollection(
@@ -5708,7 +5719,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(239)
     @DisplayName("239. Full account discovery flow")
-    fun `discover account with principal and calendar home`() {
+    fun `discover account with principal and calendar home`() = runTest {
         // Use discoverAccount which does the full discovery
         val caldavUrl = "$radicaleUrl"
         val result = calDavClient.discoverAccount(caldavUrl)
@@ -5731,7 +5742,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(240)
     @DisplayName("240. Calendar properties from discovery")
-    fun `calendar properties retrieved correctly`() {
+    fun `calendar properties retrieved correctly`() = runTest {
         val caldavUrl = "$radicaleUrl"
         val result = calDavClient.discoverAccount(caldavUrl)
 
@@ -5758,7 +5769,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(241)
     @DisplayName("241. PROPFIND Depth:0 on calendar collection")
-    fun `PROPFIND depth 0 returns collection properties only`() {
+    fun `PROPFIND depth 0 returns collection properties only`() = runTest {
         // Get ctag uses PROPFIND Depth:0
         val result = calDavClient.getCtag(defaultCalendarUrl!!)
 
@@ -5774,7 +5785,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(242)
     @DisplayName("242. Event with very long UID (edge case)")
-    fun `event with very long UID accepted`() {
+    fun `event with very long UID accepted`() = runTest {
         // UIDs can be quite long - test server handles it
         val longUid = generateUid("long-uid-" + "x".repeat(200))
         val startTime = Instant.now().plus(650, ChronoUnit.DAYS)
@@ -5801,7 +5812,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(243)
     @DisplayName("243. Multiple calendars listing via discovery")
-    fun `list all available calendars with properties`() {
+    fun `list all available calendars with properties`() = runTest {
         val caldavUrl = "$radicaleUrl"
         val result = calDavClient.discoverAccount(caldavUrl)
 
@@ -5823,7 +5834,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(244)
     @DisplayName("244. Recurring event with EXDATE and RDATE combined")
-    fun `recurring event with both EXDATE and RDATE`() {
+    fun `recurring event with both EXDATE and RDATE`() = runTest {
         val uid = generateUid("exdate-rdate")
         val now = Instant.now()
 
@@ -5856,7 +5867,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(245)
     @DisplayName("245. Event update increments SEQUENCE")
-    fun `update event and verify SEQUENCE increment`() {
+    fun `update event and verify SEQUENCE increment`() = runTest {
         // Create event with SEQUENCE:0
         val uid = generateUid("seq-update")
         val startTime = Instant.now().plus(660, ChronoUnit.DAYS)
@@ -5917,7 +5928,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(246)
     @DisplayName("246. Calendar-query with status filter")
-    fun `query events by STATUS property`() {
+    fun `query events by STATUS property`() = runTest {
         // Create events with different statuses
         val now = Instant.now()
         val startTime = Instant.now().plus(670, ChronoUnit.DAYS)
@@ -5957,7 +5968,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(247)
     @DisplayName("247. Event spanning multiple years")
-    fun `event spanning multiple years`() {
+    fun `event spanning multiple years`() = runTest {
         val uid = generateUid("multi-year")
         val now = Instant.now()
 
@@ -5988,7 +5999,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(248)
     @DisplayName("248. Concurrent modification detection")
-    fun `detect concurrent modifications via ETag`() {
+    fun `detect concurrent modifications via ETag`() = runTest {
         // Create an event
         val uid = generateUid("concurrent-etag")
         val startTime = Instant.now().plus(680, ChronoUnit.DAYS)
@@ -6067,7 +6078,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(249)
     @DisplayName("249. Bulk event retrieval performance")
-    fun `bulk retrieve 20 events efficiently`() {
+    fun `bulk retrieve 20 events efficiently`() = runTest {
         // Create 20 events
         val uids = mutableListOf<String>()
         val now = Instant.now()
@@ -6116,7 +6127,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(250)
     @DisplayName("250. RRULE with complex BYDAY (multiple weekdays)")
-    fun `RRULE with 5 BYDAY values and INTERVAL`() {
+    fun `RRULE with 5 BYDAY values and INTERVAL`() = runTest {
         val uid = generateUid("complex-byday")
         val now = Instant.now()
 
@@ -6148,7 +6159,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(251)
     @DisplayName("251. getEvent() - fetch single event by URL")
-    fun `getEvent returns single event by URL`() {
+    fun `getEvent returns single event by URL`() = runTest {
         // First create an event
         val uid = generateUid("get-single")
         val now = Instant.now()
@@ -6187,7 +6198,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(252)
     @DisplayName("252. getEvent() - returns 404 for non-existent event")
-    fun `getEvent API returns 404 for missing event`() {
+    fun `getEvent API returns 404 for missing event`() = runTest {
         val nonExistentUrl = "$defaultCalendarUrl/does-not-exist-xyz123.ics"
 
         val result = calDavClient.getEvent(nonExistentUrl)
@@ -6208,7 +6219,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(253)
     @DisplayName("253. getSyncToken() - retrieve sync token separately from ctag")
-    fun `getSyncToken returns sync token for calendar`() {
+    fun `getSyncToken returns sync token for calendar`() = runTest {
         val result = calDavClient.getSyncToken(defaultCalendarUrl!!)
 
         when (result) {
@@ -6228,7 +6239,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(254)
     @DisplayName("254. buildEventUrl() - UID with allowed special characters")
-    fun `buildEventUrl handles special characters in UID`() {
+    fun `buildEventUrl handles special characters in UID`() = runTest {
         // Test UIDs with allowed characters: @ . _ -
         val testCases = listOf(
             "simple-uid" to "simple-uid",
@@ -6249,7 +6260,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(255)
     @DisplayName("255. buildEventUrl() - UID with unsafe characters gets sanitized")
-    fun `buildEventUrl sanitizes unsafe characters`() {
+    fun `buildEventUrl sanitizes unsafe characters`() = runTest {
         // Characters that should be replaced with underscore
         val testCases = listOf(
             "uid with spaces" to "uid_with_spaces",
@@ -6271,7 +6282,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(256)
     @DisplayName("256. buildEventUrl() - rejects path traversal attempts")
-    fun `buildEventUrl rejects path traversal`() {
+    fun `buildEventUrl rejects path traversal`() = runTest {
         val maliciousUids = listOf(
             "../../../etc/passwd",
             "..\\..\\windows\\system32",
@@ -6301,7 +6312,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(257)
     @DisplayName("257. fetchEtagsInRange() - empty calendar range")
-    fun `fetchEtagsInRange handles empty range`() {
+    fun `fetchEtagsInRange handles empty range`() = runTest {
         // Query a range far in the future where no events exist
         val farFuture = Instant.now().plus(3650, ChronoUnit.DAYS) // 10 years ahead
         val farFutureEnd = farFuture.plus(30, ChronoUnit.DAYS)
@@ -6321,7 +6332,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(258)
     @DisplayName("258. fetchEtagsInRange() - large time range")
-    fun `fetchEtagsInRange handles large time range`() {
+    fun `fetchEtagsInRange handles large time range`() = runTest {
         // Query from now to 5 years in future
         val start = Instant.now()
         val end = start.plus(1825, ChronoUnit.DAYS) // 5 years
@@ -6342,7 +6353,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(259)
     @DisplayName("259. Event with GEO coordinates (RFC 5545)")
-    fun `event with GEO coordinates round-trips`() {
+    fun `event with GEO coordinates round-trips`() = runTest {
         val uid = generateUid("geo-coords")
         val now = Instant.now()
         val startTime = Instant.now().plus(720, ChronoUnit.DAYS)
@@ -6379,7 +6390,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(260)
     @DisplayName("260. Duration parsing - PT1H30M combined format")
-    fun `event with combined duration format`() {
+    fun `event with combined duration format`() = runTest {
         val uid = generateUid("duration-combined")
         val now = Instant.now()
 
@@ -6416,7 +6427,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(261)
     @DisplayName("261. Duration parsing - negative duration (-P1DT2H)")
-    fun `alarm with negative day-hour duration`() {
+    fun `alarm with negative day-hour duration`() = runTest {
         val uid = generateUid("duration-neg-dh")
         val now = Instant.now()
 
@@ -6458,7 +6469,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(262)
     @DisplayName("262. Duration parsing - PT0S zero duration")
-    fun `event with PT0S zero duration format`() {
+    fun `event with PT0S zero duration format`() = runTest {
         val uid = generateUid("duration-zero")
         val now = Instant.now()
 
@@ -6495,7 +6506,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(263)
     @DisplayName("263. Duration parsing - P1W week duration")
-    fun `event with week duration`() {
+    fun `event with week duration`() = runTest {
         val uid = generateUid("duration-week")
         val now = Instant.now()
 
@@ -6529,7 +6540,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(264)
     @DisplayName("264. ETag normalization - quoted vs unquoted")
-    fun `ETag handling with various quote formats`() {
+    fun `ETag handling with various quote formats`() = runTest {
         // Create an event and track its ETag format
         val uid = generateUid("etag-format")
         val now = Instant.now()
@@ -6572,7 +6583,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(265)
     @DisplayName("265. Sync-token expiration handling (410 Gone simulation)")
-    fun `sync with invalid token returns appropriate error`() {
+    fun `sync with invalid token returns appropriate error`() = runTest {
         // Use a clearly invalid/expired sync token
         val invalidToken = "http://invalid-sync-token/12345"
 
@@ -6602,7 +6613,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(266)
     @DisplayName("266. rawIcal preserves custom X-properties on fetchEvents")
-    fun `rawIcal preserves custom properties via fetchEvents`() {
+    fun `rawIcal preserves custom properties via fetchEvents`() = runTest {
         val uid = generateUid("rawical-fetch")
         val startTime = Instant.now().plus(600, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -6663,7 +6674,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(267)
     @DisplayName("267. rawIcal preserves custom X-properties on getEvent")
-    fun `rawIcal preserves custom properties via getEvent`() {
+    fun `rawIcal preserves custom properties via getEvent`() = runTest {
         val uid = generateUid("rawical-get")
         val startTime = Instant.now().plus(601, ChronoUnit.DAYS)
         val now = Instant.now()
@@ -6708,7 +6719,7 @@ class RadicaleIntegrationTest {
     @Test
     @Order(999)
     @DisplayName("999. Test summary - all event types created successfully")
-    fun `summary of all event types tested`() {
+    fun `summary of all event types tested`() = runTest {
         println("\n========================================")
         println("INTEGRATION TEST SUMMARY")
         println("========================================")

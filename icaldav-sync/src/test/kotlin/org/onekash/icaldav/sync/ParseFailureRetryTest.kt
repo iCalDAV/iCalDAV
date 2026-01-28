@@ -15,6 +15,7 @@ import org.mockito.kotlin.*
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
+import kotlinx.coroutines.test.runTest
 
 /**
  * TDD tests for parse failure retry behavior (Phase 7).
@@ -45,7 +46,7 @@ class ParseFailureRetryTest {
     inner class ParseErrorDetectionTests {
 
         @Test
-        fun `B4-1 detects parse error from fetchEvents`() {
+        fun `B4-1 detects parse error from fetchEvents`() = runTest {
             whenever(calDavClient.fetchEvents(eq(calendarUrl), anyOrNull(), anyOrNull()))
                 .thenReturn(DavResult.ParseError("Invalid VCALENDAR: missing BEGIN", null))
 
@@ -56,7 +57,7 @@ class ParseFailureRetryTest {
         }
 
         @Test
-        fun `B4-2 detects parse error from syncCollection`() {
+        fun `B4-2 detects parse error from syncCollection`() = runTest {
             whenever(calDavClient.syncCollection(calendarUrl, "token"))
                 .thenReturn(DavResult.ParseError("Malformed XML response", null))
 
@@ -66,7 +67,7 @@ class ParseFailureRetryTest {
         }
 
         @Test
-        fun `B4-3 detects parse error from fetchEventsByHref`() {
+        fun `B4-3 detects parse error from fetchEventsByHref`() = runTest {
             val hrefs = listOf("/cal/malformed.ics")
 
             whenever(calDavClient.fetchEventsByHref(calendarUrl, hrefs))
@@ -83,7 +84,7 @@ class ParseFailureRetryTest {
     inner class BatchParseFailureTests {
 
         @Test
-        fun `B4-4 successful events returned despite some unparseable`() {
+        fun `B4-4 successful events returned despite some unparseable`() = runTest {
             // When server returns mix of valid and invalid events,
             // the parser should return what it can parse
             val hrefs = listOf(
@@ -109,7 +110,7 @@ class ParseFailureRetryTest {
         }
 
         @Test
-        fun `B4-5 entire batch fails when server returns invalid XML`() {
+        fun `B4-5 entire batch fails when server returns invalid XML`() = runTest {
             val hrefs = listOf("/cal/event1.ics", "/cal/event2.ics")
 
             // Server returns malformed XML that can't be parsed at all
@@ -123,7 +124,7 @@ class ParseFailureRetryTest {
         }
 
         @Test
-        fun `B4-6 individual retry identifies specific failing event`() {
+        fun `B4-6 individual retry identifies specific failing event`() = runTest {
             // First, batch fails
             val hrefs = listOf("/cal/event1.ics", "/cal/event2.ics", "/cal/event3.ics")
 
@@ -169,7 +170,7 @@ class ParseFailureRetryTest {
     inner class SyncTokenCoordinationTests {
 
         @Test
-        fun `B4-7 sync token should not advance when parse error occurs`() {
+        fun `B4-7 sync token should not advance when parse error occurs`() = runTest {
             // When sync-collection succeeds but parsing fails,
             // the new sync token should NOT be saved
             // (otherwise we'd skip the unparseable events forever)
@@ -184,7 +185,7 @@ class ParseFailureRetryTest {
         }
 
         @Test
-        fun `B4-8 partial success should track which events were processed`() {
+        fun `B4-8 partial success should track which events were processed`() = runTest {
             // Sync returns hrefs, but fetching some fails
             val syncResult = SyncResult(
                 added = emptyList(),
@@ -251,7 +252,7 @@ class ParseFailureRetryTest {
     inner class PersistentFailureTrackingTests {
 
         @Test
-        fun `B4-9 consistently failing events should be tracked`() {
+        fun `B4-9 consistently failing events should be tracked`() = runTest {
             // An event that always fails to parse should be tracked
             // so we don't keep retrying it every sync
 
@@ -281,7 +282,7 @@ class ParseFailureRetryTest {
         }
 
         @Test
-        fun `B4-10 recovered event clears failure tracking`() {
+        fun `B4-10 recovered event clears failure tracking`() = runTest {
             val href = "/cal/intermittent.ics"
             val failureTracker = mutableMapOf<String, Int>()
 

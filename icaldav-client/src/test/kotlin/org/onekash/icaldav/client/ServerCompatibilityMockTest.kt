@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.DisplayName
+import kotlinx.coroutines.test.runTest
 import kotlin.test.assertTrue
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -60,7 +61,7 @@ class ServerCompatibilityMockTest {
     inner class GoogleCalendarTests {
 
         @Test
-        fun `handles Google Calendar XML namespacing style`() {
+        fun `handles Google Calendar XML namespacing style`() = runTest {
             // Google uses specific namespace patterns
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -102,7 +103,7 @@ END:VCALENDAR</caldav:calendar-data>
         }
 
         @Test
-        fun `handles Google Calendar color property`() {
+        fun `handles Google Calendar color property`() = runTest {
             // Google Calendar returns color in custom namespace
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -142,7 +143,7 @@ END:VCALENDAR</caldav:calendar-data>
         }
 
         @Test
-        fun `handles Google Calendar discovery response`() {
+        fun `handles Google Calendar discovery response`() = runTest {
             // Google uses specific principal and calendar-home patterns
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -178,7 +179,7 @@ END:VCALENDAR</caldav:calendar-data>
     inner class ICloudTests {
 
         @Test
-        fun `handles iCloud lowercase namespace prefixes`() {
+        fun `handles iCloud lowercase namespace prefixes`() = runTest {
             // iCloud uses lowercase 'd:' prefix
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -218,7 +219,7 @@ END:VCALENDAR</cal:calendar-data>
         }
 
         @Test
-        fun `handles iCloud CDATA wrapped calendar data`() {
+        fun `handles iCloud CDATA wrapped calendar data`() = runTest {
             // iCloud sometimes wraps calendar-data in CDATA sections
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -258,7 +259,7 @@ END:VCALENDAR]]></cal:calendar-data>
         }
 
         @Test
-        fun `handles iCloud ctag in calendarserver namespace`() {
+        fun `handles iCloud ctag in calendarserver namespace`() = runTest {
             // iCloud puts getctag in http://calendarserver.org/ns/
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -287,7 +288,7 @@ END:VCALENDAR]]></cal:calendar-data>
         }
 
         @Test
-        fun `handles iCloud sync-token format`() {
+        fun `handles iCloud sync-token format`() = runTest {
             // iCloud sync tokens are URLs
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -322,7 +323,7 @@ END:VCALENDAR]]></cal:calendar-data>
     inner class FastmailTests {
 
         @Test
-        fun `handles Fastmail standard DAV response`() {
+        fun `handles Fastmail standard DAV response`() = runTest {
             // Fastmail uses standard DAV prefixes
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -362,7 +363,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles Fastmail JMAP-style UIDs`() {
+        fun `handles Fastmail JMAP-style UIDs`() = runTest {
             // Fastmail UIDs can be JMAP-style
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -404,7 +405,7 @@ END:VCALENDAR</C:calendar-data>
     inner class NextcloudTests {
 
         @Test
-        fun `handles Nextcloud response format`() {
+        fun `handles Nextcloud response format`() = runTest {
             // Nextcloud uses standard DAV but with specific property extensions
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -445,7 +446,7 @@ END:VCALENDAR</cal:calendar-data>
         }
 
         @Test
-        fun `handles Nextcloud calendar list with oc namespace`() {
+        fun `handles Nextcloud calendar list with oc namespace`() = runTest {
             // Nextcloud discovery response
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -486,7 +487,7 @@ END:VCALENDAR</cal:calendar-data>
     inner class EdgeCasesTests {
 
         @Test
-        fun `handles no namespace prefix at all`() {
+        fun `handles no namespace prefix at all`() = runTest {
             // Some minimal implementations use no prefix
             val xmlResponse = """
                 <?xml version="1.0"?>
@@ -523,7 +524,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles mixed case in status`() {
+        fun `handles mixed case in status`() = runTest {
             // Some servers might have different case in HTTP status
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -553,7 +554,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles empty calendar-data element`() {
+        fun `handles empty calendar-data element`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -583,7 +584,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles self-closing calendar-data element`() {
+        fun `handles self-closing calendar-data element`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -612,7 +613,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles Unicode in calendar data`() {
+        fun `handles Unicode in calendar data`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -651,7 +652,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles multiple events in single response`() {
+        fun `handles multiple events in single response`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -723,7 +724,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles response with mixed 200 and 404 propstats`() {
+        fun `handles response with mixed 200 and 404 propstats`() = runTest {
             // Some servers return mixed success/error in same response
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -764,7 +765,7 @@ END:VCALENDAR</C:calendar-data>
     inner class HttpResponseCodeTests {
 
         @Test
-        fun `handles 503 Service Unavailable`() {
+        fun `handles 503 Service Unavailable`() = runTest {
             // Server temporarily unavailable
             server.enqueue(
                 MockResponse()
@@ -778,21 +779,32 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles 429 Too Many Requests`() {
-            // Rate limiting
+        fun `handles 429 Too Many Requests`() = runTest {
+            // Rate limiting - use short retry (1 second) to avoid test timeout
+            // Enqueue multiple 429s to exhaust retry attempts
             server.enqueue(
                 MockResponse()
                     .setResponseCode(429)
-                    .setHeader("Retry-After", "60")
+                    .setHeader("Retry-After", "1")
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(429)
+                    .setHeader("Retry-After", "1")
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(429)
+                    .setHeader("Retry-After", "1")
             )
 
             val result = calDavClient.fetchEvents(serverUrl("/cal/"))
 
-            assertTrue(result !is DavResult.Success)
+            assertTrue(result !is DavResult.Success, "Should fail after retry attempts exhausted")
         }
 
         @Test
-        fun `handles 301 redirect`() {
+        fun `handles 301 redirect`() = runTest {
             // Permanent redirect - need to enqueue both the redirect and the final response
             server.enqueue(
                 MockResponse()

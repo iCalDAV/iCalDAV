@@ -12,6 +12,7 @@ import org.mockito.kotlin.*
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
+import kotlinx.coroutines.test.runTest
 
 /**
  * TDD tests for multiget retry and fallback behavior (Phase 6).
@@ -42,7 +43,7 @@ class MultigetRetryTest {
     inner class FetchEventsByHrefTests {
 
         @Test
-        fun `B3-1 fetches multiple events in single batch`() {
+        fun `B3-1 fetches multiple events in single batch`() = runTest {
             val hrefs = listOf(
                 "/cal/event1.ics",
                 "/cal/event2.ics",
@@ -63,7 +64,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-2 returns partial results when some events not found`() {
+        fun `B3-2 returns partial results when some events not found`() = runTest {
             val hrefs = listOf(
                 "/cal/event1.ics",
                 "/cal/event2.ics",  // This one doesn't exist
@@ -88,7 +89,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-3 handles empty href list`() {
+        fun `B3-3 handles empty href list`() = runTest {
             whenever(calDavClient.fetchEventsByHref(calendarUrl, emptyList()))
                 .thenReturn(DavResult.Success(emptyList()))
 
@@ -99,7 +100,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-4 handles server error on batch request`() {
+        fun `B3-4 handles server error on batch request`() = runTest {
             val hrefs = listOf("/cal/event1.ics", "/cal/event2.ics")
 
             whenever(calDavClient.fetchEventsByHref(calendarUrl, hrefs))
@@ -112,7 +113,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-5 handles request too large error (413)`() {
+        fun `B3-5 handles request too large error (413)`() = runTest {
             // Some servers return 413 when too many hrefs in a single request
             val hrefs = (1..100).map { "/cal/event$it.ics" }
 
@@ -127,7 +128,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-6 handles network timeout`() {
+        fun `B3-6 handles network timeout`() = runTest {
             val hrefs = listOf("/cal/event1.ics")
 
             whenever(calDavClient.fetchEventsByHref(calendarUrl, hrefs))
@@ -150,7 +151,7 @@ class MultigetRetryTest {
          * 3. On continued failure, try individual
          */
         @Test
-        fun `B3-7 documents progressive batch reduction strategy`() {
+        fun `B3-7 documents progressive batch reduction strategy`() = runTest {
             // This test documents the expected behavior for a batch fetcher
             // The actual implementation would be in a BatchFetcher class
 
@@ -188,7 +189,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-8 handles mixed success and failure in batches`() {
+        fun `B3-8 handles mixed success and failure in batches`() = runTest {
             // First batch succeeds
             whenever(calDavClient.fetchEventsByHref(eq(calendarUrl), eq(listOf("/cal/event1.ics", "/cal/event2.ics"))))
                 .thenReturn(DavResult.Success(listOf(
@@ -211,7 +212,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-9 individual fetch fallback when batch fails`() {
+        fun `B3-9 individual fetch fallback when batch fails`() = runTest {
             // Batch of 3 fails
             whenever(calDavClient.fetchEventsByHref(eq(calendarUrl), eq(listOf(
                 "/cal/event1.ics",
@@ -253,7 +254,7 @@ class MultigetRetryTest {
     inner class ParseErrorHandlingTests {
 
         @Test
-        fun `B3-10 handles parse error for single malformed event`() {
+        fun `B3-10 handles parse error for single malformed event`() = runTest {
             val hrefs = listOf("/cal/event1.ics")
 
             whenever(calDavClient.fetchEventsByHref(calendarUrl, hrefs))
@@ -266,7 +267,7 @@ class MultigetRetryTest {
         }
 
         @Test
-        fun `B3-11 batch with one malformed event returns partial results`() {
+        fun `B3-11 batch with one malformed event returns partial results`() = runTest {
             // When one event in a batch is malformed, server might return partial results
             // or the client might parse what it can
             val hrefs = listOf(

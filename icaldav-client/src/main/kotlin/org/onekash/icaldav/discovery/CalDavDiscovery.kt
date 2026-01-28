@@ -40,7 +40,7 @@ class CalDavDiscovery(
      * @param serverUrl Base CalDAV URL (e.g., "https://caldav.icloud.com")
      * @return CalDavAccount with discovered calendars
      */
-    fun discoverAccount(serverUrl: String): DavResult<CalDavAccount> {
+    suspend fun discoverAccount(serverUrl: String): DavResult<CalDavAccount> {
         // Try direct discovery first
         val directResult = discoverAccountDirect(serverUrl)
         if (directResult.isSuccess) return directResult
@@ -69,7 +69,7 @@ class CalDavDiscovery(
      * 3. PROPFIND on calendar-home → list calendars
      * 4. PROPFIND on principal → schedule-inbox-URL, schedule-outbox-URL (optional)
      */
-    private fun discoverAccountDirect(serverUrl: String): DavResult<CalDavAccount> {
+    private suspend fun discoverAccountDirect(serverUrl: String): DavResult<CalDavAccount> {
         // Step 1: Discover principal URL
         val principalResult = discoverPrincipal(serverUrl)
         if (principalResult !is DavResult.Success) {
@@ -139,7 +139,7 @@ class CalDavDiscovery(
     /**
      * Discover the current-user-principal URL.
      */
-    fun discoverPrincipal(url: String): DavResult<String> {
+    suspend fun discoverPrincipal(url: String): DavResult<String> {
         val result = client.propfind(
             url = url,
             body = RequestBuilder.propfindPrincipal(),
@@ -156,7 +156,7 @@ class CalDavDiscovery(
     /**
      * Discover the calendar-home-set URL from principal.
      */
-    fun discoverCalendarHome(principalUrl: String): DavResult<String> {
+    suspend fun discoverCalendarHome(principalUrl: String): DavResult<String> {
         val result = client.propfind(
             url = principalUrl,
             body = RequestBuilder.propfindCalendarHome(),
@@ -173,7 +173,7 @@ class CalDavDiscovery(
     /**
      * List all calendars in the calendar home.
      */
-    fun listCalendars(calendarHomeUrl: String): DavResult<List<Calendar>> {
+    suspend fun listCalendars(calendarHomeUrl: String): DavResult<List<Calendar>> {
         val result = client.propfind(
             url = calendarHomeUrl,
             body = RequestBuilder.propfindCalendars(),
@@ -223,7 +223,7 @@ class CalDavDiscovery(
      * @param email User's email address (e.g., "user@example.com")
      * @return CalDavAccount with discovered calendars
      */
-    fun discoverFromEmail(email: String): DavResult<CalDavAccount> {
+    suspend fun discoverFromEmail(email: String): DavResult<CalDavAccount> {
         val domain = DnsSrvDiscovery.extractDomain(email)
             ?: return DavResult.parseError("Invalid email format: $email")
 

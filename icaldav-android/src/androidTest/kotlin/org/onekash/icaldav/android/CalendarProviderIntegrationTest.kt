@@ -27,6 +27,7 @@ import org.onekash.icaldav.model.ICalEvent
 import org.onekash.icaldav.model.RRule
 import org.onekash.icaldav.model.Frequency
 import org.onekash.icaldav.model.Transparency
+import kotlinx.coroutines.runBlocking
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -129,10 +130,12 @@ class CalendarProviderIntegrationTest {
 
         // Delete server events
         createdServerEvents.forEach { (url, etag) ->
-            try {
-                client.deleteEvent(url, etag)
-            } catch (e: Exception) {
-                // Ignore cleanup errors
+            runBlocking {
+                try {
+                    client.deleteEvent(url, etag)
+                } catch (e: Exception) {
+                    // Ignore cleanup errors
+                }
             }
         }
 
@@ -152,7 +155,7 @@ class CalendarProviderIntegrationTest {
     // ==================== Basic Event Tests ====================
 
     @Test
-    fun basicEvent_roundTrip() {
+    fun basicEvent_roundTrip() = runBlocking {
         // 1. Create event on server
         val event = createTestEvent(
             summary = "Integration Test Event $testRunId",
@@ -197,7 +200,7 @@ class CalendarProviderIntegrationTest {
     }
 
     @Test
-    fun allDayEvent_storedAsUtcMidnight() {
+    fun allDayEvent_storedAsUtcMidnight() = runBlocking {
         val event = createTestEvent(
             summary = "All-Day Test $testRunId",
             isAllDay = true
@@ -230,7 +233,7 @@ class CalendarProviderIntegrationTest {
     }
 
     @Test
-    fun recurringEvent_usesDurationNotDtend() {
+    fun recurringEvent_usesDurationNotDtend() = runBlocking {
         val event = createTestEvent(
             summary = "Weekly Meeting $testRunId",
             rrule = RRule(freq = Frequency.WEEKLY, count = 10),
@@ -281,7 +284,7 @@ class CalendarProviderIntegrationTest {
     }
 
     @Test
-    fun eventWithReminders_mappedToRemindersTable() {
+    fun eventWithReminders_mappedToRemindersTable() = runBlocking {
         // Create event with alarm on server
         val event = createTestEvent(
             summary = "Event with Reminder $testRunId",
@@ -326,7 +329,7 @@ class CalendarProviderIntegrationTest {
     }
 
     @Test
-    fun unicodeEvent_preservedCorrectly() {
+    fun unicodeEvent_preservedCorrectly() = runBlocking {
         val event = createTestEvent(
             summary = "会议 Meeting 🗓️ $testRunId",
             description = "Café meeting with naïve résumé review",
@@ -364,7 +367,7 @@ class CalendarProviderIntegrationTest {
 
     // ==================== Helper Methods ====================
 
-    private fun discoverCalendar() {
+    private fun discoverCalendar() = runBlocking {
         val discoveryResult = client.discoverAccount(serverUrl!!)
         assertThat(discoveryResult).isInstanceOf(DavResult.Success::class.java)
 

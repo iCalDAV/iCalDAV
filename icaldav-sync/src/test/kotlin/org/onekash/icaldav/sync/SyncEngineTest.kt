@@ -15,6 +15,7 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.test.runTest
 
 /**
  * Comprehensive SyncEngine tests.
@@ -47,7 +48,7 @@ class SyncEngineTest {
     inner class CtagDetectionTests {
 
         @Test
-        fun `skips sync when ctag unchanged`() {
+        fun `skips sync when ctag unchanged`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "ctag-123",
@@ -77,7 +78,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `performs full sync when ctag changed`() {
+        fun `performs full sync when ctag changed`() = runTest {
             val previousState = SyncState.initial(calendarUrl).copy(ctag = "old-ctag")
 
             whenever(calDavClient.getCtag(calendarUrl))
@@ -104,7 +105,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `performs full sync on first sync - null ctag`() {
+        fun `performs full sync on first sync - null ctag`() = runTest {
             val initialState = SyncState.initial(calendarUrl)
 
             whenever(calDavClient.getCtag(calendarUrl))
@@ -135,7 +136,7 @@ class SyncEngineTest {
     inner class EventProcessingTests {
 
         @Test
-        fun `adds new events from server`() {
+        fun `adds new events from server`() = runTest {
             val previousState = SyncState.initial(calendarUrl)
 
             val serverEvent1 = createServerEvent("event1", "Meeting")
@@ -163,7 +164,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `detects deleted events`() {
+        fun `detects deleted events`() = runTest {
             val localEvent = createLocalEvent("event1", "Meeting")
 
             val previousState = SyncState(
@@ -198,7 +199,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `updates modified events`() {
+        fun `updates modified events`() = runTest {
             val localEvent = createLocalEvent("event1", "Old Title")
             val serverEvent = createServerEvent("event1", "New Title", etag = "new-etag")
 
@@ -238,7 +239,7 @@ class SyncEngineTest {
     inner class ConflictDetectionTests {
 
         @Test
-        fun `detects both-modified conflict`() {
+        fun `detects both-modified conflict`() = runTest {
             val localEvent = createLocalEvent("event1", "Local Changes")
             val serverEvent = createServerEvent("event1", "Server Changes", etag = "new-etag")
 
@@ -283,7 +284,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `resolves conflict with USE_REMOTE`() {
+        fun `resolves conflict with USE_REMOTE`() = runTest {
             val localEvent = createLocalEvent("event1", "Local Version")
             val serverEvent = createServerEvent("event1", "Server Version", etag = "new-etag")
 
@@ -309,7 +310,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `resolves conflict with USE_LOCAL`() {
+        fun `resolves conflict with USE_LOCAL`() = runTest {
             val localEvent = createLocalEvent("event1", "Local Version")
             val serverEvent = createServerEvent("event1", "Server Version", etag = "new-etag")
 
@@ -336,7 +337,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `resolves conflict with SKIP`() {
+        fun `resolves conflict with SKIP`() = runTest {
             val localEvent = createLocalEvent("event1", "Local Version")
             val serverEvent = createServerEvent("event1", "Server Version", etag = "new-etag")
 
@@ -361,7 +362,7 @@ class SyncEngineTest {
             assertEquals(1, report.conflicts.size)
         }
 
-        private fun setupConflictScenario(localEvent: ICalEvent, serverEvent: EventWithMetadata) {
+        private suspend fun setupConflictScenario(localEvent: ICalEvent, serverEvent: EventWithMetadata) {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("new-ctag"))
 
@@ -389,7 +390,7 @@ class SyncEngineTest {
     inner class ErrorHandlingTests {
 
         @Test
-        fun `handles HTTP 401 authentication error`() {
+        fun `handles HTTP 401 authentication error`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.HttpError(401, "Unauthorized"))
 
@@ -406,7 +407,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `handles HTTP 500 server error`() {
+        fun `handles HTTP 500 server error`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.HttpError(500, "Internal Server Error"))
 
@@ -423,7 +424,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `handles network error`() {
+        fun `handles network error`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.NetworkError(java.io.IOException("Connection timeout")))
 
@@ -440,7 +441,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `handles parse error`() {
+        fun `handles parse error`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.ParseError("Invalid XML", null))
 
@@ -457,7 +458,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `handles exception during sync`() {
+        fun `handles exception during sync`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenThrow(RuntimeException("Unexpected error"))
 
@@ -474,7 +475,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `handles fetch events error after successful ctag check`() {
+        fun `handles fetch events error after successful ctag check`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("new-ctag"))
 
@@ -498,7 +499,7 @@ class SyncEngineTest {
     inner class CallbackTests {
 
         @Test
-        fun `notifies callback on sync start`() {
+        fun `notifies callback on sync start`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("ctag"))
 
@@ -520,7 +521,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `notifies callback on sync complete`() {
+        fun `notifies callback on sync complete`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("ctag"))
 
@@ -542,7 +543,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `notifies callback on start even when error occurs`() {
+        fun `notifies callback on start even when error occurs`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.HttpError(401, "Unauthorized"))
 
@@ -564,7 +565,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `reports progress during sync`() {
+        fun `reports progress during sync`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("ctag"))
 
@@ -591,7 +592,7 @@ class SyncEngineTest {
     inner class StateManagementTests {
 
         @Test
-        fun `saves new sync state after successful sync`() {
+        fun `saves new sync state after successful sync`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("new-ctag"))
 
@@ -617,7 +618,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `preserves etag map in state`() {
+        fun `preserves etag map in state`() = runTest {
             val serverEvent = createServerEvent("event1", etag = "etag-abc")
 
             whenever(calDavClient.getCtag(calendarUrl))
@@ -652,7 +653,7 @@ class SyncEngineTest {
     inner class EdgeCaseTests {
 
         @Test
-        fun `handles empty server response`() {
+        fun `handles empty server response`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("ctag"))
 
@@ -674,7 +675,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `handles null ctag from server`() {
+        fun `handles null ctag from server`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success(null))
 
@@ -696,7 +697,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `handles large event count`() {
+        fun `handles large event count`() = runTest {
             val serverEvents = (1..100).map { createServerEvent("event$it") }
 
             whenever(calDavClient.getCtag(calendarUrl))
@@ -721,7 +722,7 @@ class SyncEngineTest {
         }
 
         @Test
-        fun `tracks sync duration`() {
+        fun `tracks sync duration`() = runTest {
             whenever(calDavClient.getCtag(calendarUrl))
                 .thenReturn(DavResult.Success("ctag"))
 

@@ -34,7 +34,7 @@ class SyncEngine(
      * @param callback Optional progress callback
      * @return Sync report with results
      */
-    fun sync(
+    suspend fun sync(
         calendarUrl: String,
         previousState: SyncState,
         localProvider: LocalEventProvider,
@@ -143,7 +143,7 @@ class SyncEngine(
      * @param callback Optional progress callback
      * @return Sync report with results
      */
-    fun syncWithIncremental(
+    suspend fun syncWithIncremental(
         calendarUrl: String,
         previousState: SyncState,
         localProvider: LocalEventProvider,
@@ -268,7 +268,7 @@ class SyncEngine(
     /**
      * Fetch events incrementally using sync-collection REPORT.
      */
-    private fun fetchIncremental(
+    private suspend fun fetchIncremental(
         calendarUrl: String,
         syncToken: String,
         callback: SyncCallback?
@@ -320,7 +320,7 @@ class SyncEngine(
     /**
      * Fetch all events for full sync.
      */
-    private fun fetchFull(
+    private suspend fun fetchFull(
         calendarUrl: String,
         callback: SyncCallback?
     ): IncrementalFetchResult {

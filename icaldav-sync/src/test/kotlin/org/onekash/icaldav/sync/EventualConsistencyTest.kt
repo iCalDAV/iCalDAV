@@ -16,6 +16,7 @@ import org.mockito.kotlin.*
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
+import kotlinx.coroutines.test.runTest
 
 /**
  * TDD tests for eventual consistency handling (Phase 8).
@@ -46,7 +47,7 @@ class EventualConsistencyTest {
     inner class RecentlyCreatedEventTests {
 
         @Test
-        fun `B5-1 handles 404 for event just created`() {
+        fun `B5-1 handles 404 for event just created`() = runTest {
             // Create event succeeds
             val eventUrl = "$calendarUrl/new-event.ics"
 
@@ -67,7 +68,7 @@ class EventualConsistencyTest {
         }
 
         @Test
-        fun `B5-2 event becomes available after delay`() {
+        fun `B5-2 event becomes available after delay`() = runTest {
             val eventUrl = "$calendarUrl/delayed-event.ics"
 
             // First fetch: not found
@@ -90,7 +91,7 @@ class EventualConsistencyTest {
         }
 
         @Test
-        fun `B5-3 tracks pending events awaiting propagation`() {
+        fun `B5-3 tracks pending events awaiting propagation`() = runTest {
             // When we create an event but can't immediately verify it,
             // track it for later verification
 
@@ -127,7 +128,7 @@ class EventualConsistencyTest {
     inner class SyncCollectionConsistencyTests {
 
         @Test
-        fun `B5-4 sync-collection may not include very recent changes`() {
+        fun `B5-4 sync-collection may not include very recent changes`() = runTest {
             // iCloud sync-collection might not immediately include
             // events created in the last few seconds
 
@@ -151,7 +152,7 @@ class EventualConsistencyTest {
         }
 
         @Test
-        fun `B5-5 subsequent sync picks up delayed events`() {
+        fun `B5-5 subsequent sync picks up delayed events`() = runTest {
             // First sync: event not included
             val firstSyncResult = SyncResult(
                 added = emptyList(),
@@ -191,7 +192,7 @@ class EventualConsistencyTest {
     inner class UpdateDeleteConsistencyTests {
 
         @Test
-        fun `B5-6 update may show old version briefly`() {
+        fun `B5-6 update may show old version briefly`() = runTest {
             val eventUrl = "$calendarUrl/updating.ics"
 
             // Update succeeds with new etag
@@ -221,7 +222,7 @@ class EventualConsistencyTest {
         }
 
         @Test
-        fun `B5-7 delete may still return event briefly`() {
+        fun `B5-7 delete may still return event briefly`() = runTest {
             val eventUrl = "$calendarUrl/deleting.ics"
 
             // Delete succeeds
@@ -253,7 +254,7 @@ class EventualConsistencyTest {
     inner class ETagConsistencyTests {
 
         @Test
-        fun `B5-8 etag mismatch during propagation returns 412`() {
+        fun `B5-8 etag mismatch during propagation returns 412`() = runTest {
             val eventUrl = "$calendarUrl/conflicting.ics"
 
             // Update with etag that doesn't match current server state
@@ -268,7 +269,7 @@ class EventualConsistencyTest {
         }
 
         @Test
-        fun `B5-9 ctag may lag behind individual event changes`() {
+        fun `B5-9 ctag may lag behind individual event changes`() = runTest {
             // CTag might not immediately reflect the latest event changes
 
             // First ctag check
@@ -292,7 +293,7 @@ class EventualConsistencyTest {
         }
 
         @Test
-        fun `B5-10 handles missing etag in response`() {
+        fun `B5-10 handles missing etag in response`() = runTest {
             // Some servers might not always return etag
 
             val event = EventWithMetadata(
@@ -317,7 +318,7 @@ class EventualConsistencyTest {
     inner class RetryStrategyTests {
 
         @Test
-        fun `B5-11 documents exponential backoff for consistency retries`() {
+        fun `B5-11 documents exponential backoff for consistency retries`() = runTest {
             // For eventual consistency issues, retries should use backoff
             val baseDelayMs = 100L
             val maxRetries = 5
@@ -336,7 +337,7 @@ class EventualConsistencyTest {
         }
 
         @Test
-        fun `B5-12 retry gives up after max attempts`() {
+        fun `B5-12 retry gives up after max attempts`() = runTest {
             val eventUrl = "$calendarUrl/never-appears.ics"
             val maxRetries = 3
             var retryCount = 0

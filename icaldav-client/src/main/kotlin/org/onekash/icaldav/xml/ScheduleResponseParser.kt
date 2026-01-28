@@ -3,9 +3,14 @@ package org.onekash.icaldav.xml
 import org.onekash.icaldav.model.RequestStatus
 import org.onekash.icaldav.model.ScheduleStatus
 import org.onekash.icaldav.model.SchedulingResult
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
+import java.io.StringReader
 
 /**
  * Parser for schedule-response XML (RFC 6638 Section 3.2.11).
+ *
+ * Uses XmlPullParser for efficient parsing with automatic entity decoding.
  *
  * Response format:
  * ```xml
@@ -29,52 +34,50 @@ object ScheduleResponseParser {
     fun parse(xml: String): SchedulingResult {
         val recipientResults = mutableListOf<SchedulingResult.RecipientResult>()
 
-        // Pattern to find all <response> elements (handles namespace prefixes)
-        val responsePattern = Regex(
-            """<(?:\w+:)?response[^>]*>(.*?)</(?:\w+:)?response>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
+        try {
+            val parser = createParser(xml)
+            var currentResult: ResultBuilder? = null
+            var inRecipient = false
 
-        for (match in responsePattern.findAll(xml)) {
-            val responseXml = match.groupValues[1]
-
-            // Extract recipient (inside <href>)
-            val recipientPattern = Regex(
-                """<(?:\w+:)?recipient[^>]*>.*?<(?:\w+:)?href[^>]*>([^<]+)</(?:\w+:)?href>""",
-                setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-            )
-            val recipient = recipientPattern.find(responseXml)
-                ?.groupValues?.get(1)
-                ?.trim()
-                ?.removePrefix("mailto:")
-                ?: continue
-
-            // Extract request-status (e.g., "2.0;Success")
-            val statusPattern = Regex(
-                """<(?:\w+:)?request-status[^>]*>([^<]+)</(?:\w+:)?request-status>""",
-                RegexOption.IGNORE_CASE
-            )
-            val statusStr = statusPattern.find(responseXml)?.groupValues?.get(1)?.trim()
-                ?: "5.0;Unknown error"
-            val status = ScheduleStatus.fromString(statusStr)
-            val requestStatus = RequestStatus.fromCode(status.code)
-
-            // Extract calendar-data (optional, for free-busy responses)
-            val calDataPattern = Regex(
-                """<(?:\w+:)?calendar-data[^>]*>(.*?)</(?:\w+:)?calendar-data>""",
-                setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-            )
-            val calendarData = calDataPattern.find(responseXml)?.groupValues?.get(1)?.trim()
-                ?.let { unescapeXml(it) }
-
-            recipientResults.add(
-                SchedulingResult.RecipientResult(
-                    recipient = recipient,
-                    status = status,
-                    requestStatus = requestStatus,
-                    calendarData = calendarData
-                )
-            )
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when (parser.name.lowercase()) {
+                            "response" -> currentResult = ResultBuilder()
+                            "recipient" -> inRecipient = true
+                            "href" -> {
+                                if (inRecipient && currentResult != null) {
+                                    val href = readTextContent(parser).trim()
+                                    currentResult.recipient = href.removePrefix("mailto:")
+                                }
+                            }
+                            "request-status" -> {
+                                if (currentResult != null) {
+                                    currentResult.statusStr = readTextContent(parser).trim()
+                                }
+                            }
+                            "calendar-data" -> {
+                                if (currentResult != null) {
+                                    currentResult.calendarData = readTextContent(parser).takeIf { it.isNotEmpty() }
+                                }
+                            }
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        when (parser.name.lowercase()) {
+                            "response" -> {
+                                currentResult?.build()?.let { recipientResults.add(it) }
+                                currentResult = null
+                            }
+                            "recipient" -> inRecipient = false
+                        }
+                    }
+                }
+                eventType = parser.next()
+            }
+        } catch (e: Exception) {
+            // Return whatever we parsed
         }
 
         return SchedulingResult(
@@ -84,15 +87,49 @@ object ScheduleResponseParser {
         )
     }
 
-    /**
-     * Unescape XML entities in calendar data.
-     */
-    private fun unescapeXml(text: String): String {
-        return text
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&amp;", "&")
-            .replace("&quot;", "\"")
-            .replace("&apos;", "'")
+    private fun createParser(xml: String): XmlPullParser {
+        val cleanXml = XmlParserUtils.stripXmlProlog(xml)
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = true
+        val parser = factory.newPullParser()
+        parser.setInput(StringReader(cleanXml))
+        return parser
+    }
+
+    private fun readTextContent(parser: XmlPullParser): String {
+        val content = StringBuilder()
+        var depth = 1
+        var eventType = parser.next()
+
+        while (depth > 0) {
+            when (eventType) {
+                XmlPullParser.TEXT -> content.append(parser.text)
+                XmlPullParser.CDSECT -> content.append(parser.text)
+                XmlPullParser.START_TAG -> depth++
+                XmlPullParser.END_TAG -> depth--
+            }
+            if (depth > 0) eventType = parser.next()
+        }
+
+        return content.toString().trim()
+    }
+
+    private class ResultBuilder {
+        var recipient: String? = null
+        var statusStr: String = "5.0;Unknown error"
+        var calendarData: String? = null
+
+        fun build(): SchedulingResult.RecipientResult? {
+            val r = recipient ?: return null
+            val status = ScheduleStatus.fromString(statusStr)
+            val requestStatus = RequestStatus.fromCode(status.code)
+
+            return SchedulingResult.RecipientResult(
+                recipient = r,
+                status = status,
+                requestStatus = requestStatus,
+                calendarData = calendarData
+            )
+        }
     }
 }

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.DisplayName
+import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertIs
@@ -56,7 +57,7 @@ class CalDavDiscoveryTest {
     inner class PrincipalDiscoveryTests {
 
         @Test
-        fun `discovers principal URL from root`() {
+        fun `discovers principal URL from root`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -88,7 +89,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles missing principal gracefully`() {
+        fun `handles missing principal gracefully`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -119,7 +120,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles 401 unauthorized`() {
+        fun `handles 401 unauthorized`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(401)
@@ -137,7 +138,7 @@ class CalDavDiscoveryTest {
     inner class CalendarHomeDiscoveryTests {
 
         @Test
-        fun `discovers calendar-home-set from principal`() {
+        fun `discovers calendar-home-set from principal`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -168,7 +169,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles absolute URL in calendar-home-set`() {
+        fun `handles absolute URL in calendar-home-set`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -204,7 +205,7 @@ class CalDavDiscoveryTest {
     inner class CalendarListingTests {
 
         @Test
-        fun `lists calendars from calendar-home`() {
+        fun `lists calendars from calendar-home`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">
@@ -267,7 +268,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `skips calendar-home itself in listing`() {
+        fun `skips calendar-home itself in listing`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -299,7 +300,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles empty calendar home`() {
+        fun `handles empty calendar home`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -323,7 +324,7 @@ class CalDavDiscoveryTest {
     inner class FullDiscoveryFlowTests {
 
         @Test
-        fun `full discovery flow succeeds`() {
+        fun `full discovery flow succeeds`() = runTest {
             // Step 1: Principal discovery
             val principalResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -403,7 +404,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `discovery fails on first step error`() {
+        fun `discovery fails on first step error`() = runTest {
             server.enqueue(MockResponse().setResponseCode(401))
 
             val result = discovery.discoverAccount(serverUrl("/"))
@@ -417,7 +418,7 @@ class CalDavDiscoveryTest {
     inner class ICloudCompatibilityTests {
 
         @Test
-        fun `handles iCloud response format`() {
+        fun `handles iCloud response format`() = runTest {
             // iCloud uses specific URLs and response patterns
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -449,7 +450,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles caldav dot icloud dot com redirect`() {
+        fun `handles caldav dot icloud dot com redirect`() = runTest {
             // iCloud often redirects from caldav.icloud.com to partition server
             // Note: testHttpClient() doesn't auto-follow redirects (followRedirects=false)
             // This test verifies the client handles 301 gracefully (returns HttpError, not crash)
@@ -472,7 +473,7 @@ class CalDavDiscoveryTest {
     inner class GoogleCalendarCompatibilityTests {
 
         @Test
-        fun `handles Google Calendar delegate URLs`() {
+        fun `handles Google Calendar delegate URLs`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -509,7 +510,7 @@ class CalDavDiscoveryTest {
     inner class ErrorHandlingTests {
 
         @Test
-        fun `handles 404 not found`() {
+        fun `handles 404 not found`() = runTest {
             server.enqueue(MockResponse().setResponseCode(404))
 
             val result = discovery.discoverPrincipal(serverUrl("/nonexistent/"))
@@ -518,7 +519,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles 500 server error`() {
+        fun `handles 500 server error`() = runTest {
             server.enqueue(MockResponse().setResponseCode(500))
 
             val result = discovery.discoverPrincipal(serverUrl("/"))
@@ -527,7 +528,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles malformed XML response`() {
+        fun `handles malformed XML response`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(207)
@@ -545,7 +546,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `handles empty response body`() {
+        fun `handles empty response body`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(207)
@@ -574,7 +575,7 @@ class CalDavDiscoveryTest {
     inner class UrlResolutionTests {
 
         @Test
-        fun `resolves relative path against base URL`() {
+        fun `resolves relative path against base URL`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -617,7 +618,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `falls back to well-known when direct fails with 404`() {
+        fun `falls back to well-known when direct fails with 404`() = runTest {
             val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
 
             // First request (direct) fails with 404
@@ -686,7 +687,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `skips well-known when disabled`() {
+        fun `skips well-known when disabled`() = runTest {
             val discoveryWithoutFallback = createDiscoveryWithFallback(enabled = false)
 
             // Direct request fails
@@ -702,7 +703,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `returns original error when both fail`() {
+        fun `returns original error when both fail`() = runTest {
             val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
 
             // Direct request fails with 401
@@ -721,7 +722,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `prevents loop when well-known equals original URL`() {
+        fun `prevents loop when well-known equals original URL`() = runTest {
             val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
 
             // Request to /.well-known/caldav fails
@@ -736,7 +737,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `strips path from URL before adding well-known`() {
+        fun `strips path from URL before adding well-known`() = runTest {
             val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
 
             // Direct request to /some/path/ fails
@@ -800,7 +801,7 @@ class CalDavDiscoveryTest {
         }
 
         @Test
-        fun `direct URL discovery still works when well-known enabled`() {
+        fun `direct URL discovery still works when well-known enabled`() = runTest {
             val discoveryWithFallback = createDiscoveryWithFallback(enabled = true)
 
             // Direct request succeeds
@@ -876,7 +877,7 @@ class CalDavDiscoveryTest {
     inner class RegressionTests {
 
         @Test
-        fun `existing discovery flow still works`() {
+        fun `existing discovery flow still works`() = runTest {
             // Standard discovery flow (no well-known needed)
             val principalResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>

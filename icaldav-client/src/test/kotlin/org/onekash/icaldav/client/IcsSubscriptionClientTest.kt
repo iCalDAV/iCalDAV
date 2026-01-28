@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.DisplayName
+import kotlinx.coroutines.test.runTest
 import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -54,7 +55,7 @@ class IcsSubscriptionClientTest {
     inner class BasicFetchingTests {
 
         @Test
-        fun `fetches ICS content successfully`() {
+        fun `fetches ICS content successfully`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -83,7 +84,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `parses multiple events`() {
+        fun `parses multiple events`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -118,7 +119,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `sends User-Agent header`() {
+        fun `sends User-Agent header`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -132,7 +133,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `sends Accept header for calendar content`() {
+        fun `sends Accept header for calendar content`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -196,7 +197,7 @@ class IcsSubscriptionClientTest {
     inner class HttpCachingTests {
 
         @Test
-        fun `sends If-None-Match with ETag`() {
+        fun `sends If-None-Match with ETag`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(304)
@@ -210,7 +211,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `sends If-Modified-Since with Last-Modified`() {
+        fun `sends If-Modified-Since with Last-Modified`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(304)
@@ -224,7 +225,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `returns NotModified on 304 response`() {
+        fun `returns NotModified on 304 response`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(304)
@@ -237,7 +238,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `captures ETag from response`() {
+        fun `captures ETag from response`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -252,7 +253,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `captures Last-Modified from response`() {
+        fun `captures Last-Modified from response`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -267,7 +268,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `parses Cache-Control max-age`() {
+        fun `parses Cache-Control max-age`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -287,7 +288,7 @@ class IcsSubscriptionClientTest {
     inner class RefreshIntervalTests {
 
         @Test
-        fun `parses REFRESH-INTERVAL from ICS`() {
+        fun `parses REFRESH-INTERVAL from ICS`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -313,7 +314,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `parses REFRESH-INTERVAL in minutes`() {
+        fun `parses REFRESH-INTERVAL in minutes`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -339,7 +340,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `parses REFRESH-INTERVAL in days`() {
+        fun `parses REFRESH-INTERVAL in days`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -370,7 +371,7 @@ class IcsSubscriptionClientTest {
     inner class MetadataExtractionTests {
 
         @Test
-        fun `extracts X-WR-CALNAME`() {
+        fun `extracts X-WR-CALNAME`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -396,7 +397,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `extracts X-APPLE-CALENDAR-COLOR`() {
+        fun `extracts X-APPLE-CALENDAR-COLOR`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -422,7 +423,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `handles missing metadata gracefully`() {
+        fun `handles missing metadata gracefully`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -442,7 +443,7 @@ class IcsSubscriptionClientTest {
     inner class ErrorHandlingTests {
 
         @Test
-        fun `returns HttpError for 401`() {
+        fun `returns HttpError for 401`() = runTest {
             server.enqueue(MockResponse().setResponseCode(401))
 
             val result = client.fetch(serverUrl("/calendar.ics"))
@@ -452,7 +453,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `returns HttpError for 403`() {
+        fun `returns HttpError for 403`() = runTest {
             server.enqueue(MockResponse().setResponseCode(403))
 
             val result = client.fetch(serverUrl("/calendar.ics"))
@@ -462,7 +463,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `returns HttpError for 404`() {
+        fun `returns HttpError for 404`() = runTest {
             server.enqueue(MockResponse().setResponseCode(404))
 
             val result = client.fetch(serverUrl("/calendar.ics"))
@@ -473,7 +474,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `returns HttpError for 500`() {
+        fun `returns HttpError for 500`() = runTest {
             server.enqueue(MockResponse().setResponseCode(500))
 
             val result = client.fetch(serverUrl("/calendar.ics"))
@@ -483,7 +484,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `returns ParseError for empty response`() {
+        fun `returns ParseError for empty response`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -496,7 +497,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `returns ParseError for invalid ICS`() {
+        fun `returns ParseError for invalid ICS`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -511,7 +512,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `returns ParseError for invalid URL`() {
+        fun `returns ParseError for invalid URL`() = runTest {
             val result = client.fetch("not-a-valid-url")
 
             // Should return ParseError or NetworkError for invalid URL
@@ -524,7 +525,7 @@ class IcsSubscriptionClientTest {
     inner class SubscriptionManagementTests {
 
         @Test
-        fun `fetchSubscription updates cache state on success`() {
+        fun `fetchSubscription updates cache state on success`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -547,7 +548,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `fetchSubscription updates calendar name`() {
+        fun `fetchSubscription updates calendar name`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -579,7 +580,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `fetchSubscription preserves subscription on NotModified`() {
+        fun `fetchSubscription preserves subscription on NotModified`() = runTest {
             server.enqueue(MockResponse().setResponseCode(304))
 
             val subscription = Subscription(
@@ -661,7 +662,7 @@ class IcsSubscriptionClientTest {
     inner class EdgeCaseTests {
 
         @Test
-        fun `handles calendar with no events`() {
+        fun `handles calendar with no events`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -682,7 +683,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `handles large calendar`() {
+        fun `handles large calendar`() = runTest {
             // Build ICS content properly with StringBuilder
             val sb = StringBuilder()
             sb.appendLine("BEGIN:VCALENDAR")
@@ -714,7 +715,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `handles redirects`() {
+        fun `handles redirects`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(302)
@@ -733,7 +734,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `handles calendar with Unicode content`() {
+        fun `handles calendar with Unicode content`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -763,7 +764,7 @@ class IcsSubscriptionClientTest {
         }
 
         @Test
-        fun `handles recurring events`() {
+        fun `handles recurring events`() = runTest {
             val icsContent = """
                 BEGIN:VCALENDAR
                 VERSION:2.0

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Nested
+import kotlinx.coroutines.test.runTest
 import org.onekash.icaldav.model.DavResult
 import org.onekash.icaldav.model.ICalEvent
 import org.onekash.icaldav.model.ICalDateTime
@@ -51,7 +52,7 @@ class CalDavClientTest {
     inner class FetchEventsTests {
 
         @Test
-        fun `fetchEvents returns parsed events from REPORT response`() {
+        fun `fetchEvents returns parsed events from REPORT response`() = runTest {
             val multistatus = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -95,7 +96,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents with time range adds time-range filter`() {
+        fun `fetchEvents with time range adds time-range filter`() = runTest {
             mockServer.enqueue(MockResponse()
                 .setResponseCode(207)
                 .setBody(emptyMultistatus())
@@ -115,7 +116,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents returns empty list on 207 with no events`() {
+        fun `fetchEvents returns empty list on 207 with no events`() = runTest {
             mockServer.enqueue(MockResponse()
                 .setResponseCode(207)
                 .setBody(emptyMultistatus())
@@ -131,7 +132,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents handles HTTP 401 unauthorized`() {
+        fun `fetchEvents handles HTTP 401 unauthorized`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(401))
 
             val result = calDavClient.fetchEvents(
@@ -143,7 +144,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents handles HTTP 404 not found`() {
+        fun `fetchEvents handles HTTP 404 not found`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(404))
 
             val result = calDavClient.fetchEvents(
@@ -161,7 +162,7 @@ END:VCALENDAR</C:calendar-data>
     inner class CreateEventTests {
 
         @Test
-        fun `createEvent sends PUT with If-None-Match header`() {
+        fun `createEvent sends PUT with If-None-Match header`() = runTest {
             mockServer.enqueue(MockResponse()
                 .setResponseCode(201)
                 .addHeader("ETag", "\"new-etag\""))
@@ -187,7 +188,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `createEvent handles 412 conflict when event exists`() {
+        fun `createEvent handles 412 conflict when event exists`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(412))
 
             val event = createTestEvent(
@@ -211,7 +212,7 @@ END:VCALENDAR</C:calendar-data>
     inner class UpdateEventTests {
 
         @Test
-        fun `updateEvent sends PUT with If-Match header`() {
+        fun `updateEvent sends PUT with If-Match header`() = runTest {
             mockServer.enqueue(MockResponse()
                 .setResponseCode(200)
                 .addHeader("ETag", "\"updated-etag\""))
@@ -236,7 +237,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `updateEvent handles 412 etag mismatch`() {
+        fun `updateEvent handles 412 etag mismatch`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(412))
 
             val event = createTestEvent(
@@ -261,7 +262,7 @@ END:VCALENDAR</C:calendar-data>
     inner class DeleteEventTests {
 
         @Test
-        fun `deleteEvent sends DELETE request`() {
+        fun `deleteEvent sends DELETE request`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(204))
 
             val result = calDavClient.deleteEvent(
@@ -275,7 +276,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `deleteEvent with etag sends If-Match header`() {
+        fun `deleteEvent with etag sends If-Match header`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(204))
 
             calDavClient.deleteEvent(
@@ -288,7 +289,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `deleteEvent succeeds on 404 (already deleted)`() {
+        fun `deleteEvent succeeds on 404 (already deleted)`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(404))
 
             val result = calDavClient.deleteEvent(
@@ -306,7 +307,7 @@ END:VCALENDAR</C:calendar-data>
     inner class SyncCollectionTests {
 
         @Test
-        fun `syncCollection returns added and deleted events`() {
+        fun `syncCollection returns added and deleted events`() = runTest {
             val multistatus = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -360,7 +361,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `syncCollection handles expired token (410 Gone)`() {
+        fun `syncCollection handles expired token (410 Gone)`() = runTest {
             mockServer.enqueue(MockResponse().setResponseCode(410))
 
             val result = calDavClient.syncCollection(
@@ -379,7 +380,7 @@ END:VCALENDAR</C:calendar-data>
     inner class GetCtagTests {
 
         @Test
-        fun `getCtag returns ctag from PROPFIND response`() {
+        fun `getCtag returns ctag from PROPFIND response`() = runTest {
             val multistatus = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/">
@@ -473,7 +474,7 @@ END:VCALENDAR</C:calendar-data>
     inner class CapabilitiesTests {
 
         @Test
-        fun `getCapabilities parses DAV header`() {
+        fun `getCapabilities parses DAV header`() = runTest {
             mockServer.enqueue(MockResponse()
                 .setResponseCode(200)
                 .addHeader("DAV", "1, 2, calendar-access, calendar-auto-schedule")
@@ -490,7 +491,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `getCapabilities caches result`() {
+        fun `getCapabilities caches result`() = runTest {
             mockServer.enqueue(MockResponse()
                 .setResponseCode(200)
                 .addHeader("DAV", "1, 2, calendar-access"))
@@ -510,7 +511,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `getCapabilities forceRefresh bypasses cache`() {
+        fun `getCapabilities forceRefresh bypasses cache`() = runTest {
             mockServer.enqueue(MockResponse()
                 .setResponseCode(200)
                 .addHeader("DAV", "1, 2, calendar-access"))

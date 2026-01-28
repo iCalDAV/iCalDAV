@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import kotlinx.coroutines.test.runTest
 import java.util.concurrent.TimeUnit
 
 /**
@@ -51,7 +52,7 @@ class WebDavClientResilienceTest {
     // ========== Retry on Transient Failures ==========
 
     @Test
-    fun `retries on socket timeout and eventually succeeds`() {
+    fun `retries on socket timeout and eventually succeeds`() = runTest {
         // First request times out, second succeeds
         mockWebServer.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
         mockWebServer.enqueue(MockResponse().setBody("OK"))
@@ -64,7 +65,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `succeeds on first try when server is healthy`() {
+    fun `succeeds on first try when server is healthy`() = runTest {
         // Simple success case - no retries needed
         mockWebServer.enqueue(MockResponse().setBody("Healthy Response"))
 
@@ -78,7 +79,7 @@ class WebDavClientResilienceTest {
     // ========== Retry on 5xx Server Errors ==========
 
     @Test
-    fun `retries on 500 server error with backoff`() {
+    fun `retries on 500 server error with backoff`() = runTest {
         // Two 500 errors, then success
         mockWebServer.enqueue(MockResponse().setResponseCode(500))
         mockWebServer.enqueue(MockResponse().setResponseCode(500))
@@ -95,7 +96,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `retries on 502 bad gateway`() {
+    fun `retries on 502 bad gateway`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(502))
         mockWebServer.enqueue(MockResponse().setBody("OK"))
 
@@ -106,7 +107,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `retries on 503 service unavailable`() {
+    fun `retries on 503 service unavailable`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(503))
         mockWebServer.enqueue(MockResponse().setBody("OK"))
 
@@ -119,7 +120,7 @@ class WebDavClientResilienceTest {
     // ========== Rate Limiting (429) ==========
 
     @Test
-    fun `handles 429 with Retry-After header`() {
+    fun `handles 429 with Retry-After header`() = runTest {
         // 429 with 1 second delay, then success
         mockWebServer.enqueue(
             MockResponse()
@@ -138,7 +139,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `handles 429 without Retry-After header using default`() {
+    fun `handles 429 without Retry-After header using default`() = runTest {
         // 429 without header - should use default wait time
         mockWebServer.enqueue(MockResponse().setResponseCode(429))
         mockWebServer.enqueue(MockResponse().setBody("OK"))
@@ -152,7 +153,7 @@ class WebDavClientResilienceTest {
     // ========== Response Size Limiting ==========
 
     @Test
-    fun `rejects response over size limit`() {
+    fun `rejects response over size limit`() = runTest {
         // 11MB response exceeds 10MB limit
         val largeBody = "x".repeat(11 * 1024 * 1024)
         mockWebServer.enqueue(MockResponse().setBody(largeBody))
@@ -164,7 +165,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `accepts response under size limit`() {
+    fun `accepts response under size limit`() = runTest {
         // 1MB response is under limit
         val body = "x".repeat(1 * 1024 * 1024)
         mockWebServer.enqueue(MockResponse().setBody(body))
@@ -176,7 +177,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `accepts response at exactly size limit`() {
+    fun `accepts response at exactly size limit`() = runTest {
         // 10MB response is exactly at the limit - should succeed
         val body = "x".repeat(10 * 1024 * 1024)
         mockWebServer.enqueue(MockResponse().setBody(body))
@@ -190,7 +191,7 @@ class WebDavClientResilienceTest {
     // ========== Retry Exhaustion ==========
 
     @Test
-    fun `gives up after MAX_RETRIES on 500`() {
+    fun `gives up after MAX_RETRIES on 500`() = runTest {
         // All attempts return 500
         repeat(5) {
             mockWebServer.enqueue(MockResponse().setResponseCode(500))
@@ -205,7 +206,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `gives up after MAX_RETRIES on timeout`() {
+    fun `gives up after MAX_RETRIES on timeout`() = runTest {
         // All attempts time out
         repeat(5) {
             mockWebServer.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
@@ -221,7 +222,7 @@ class WebDavClientResilienceTest {
     // ========== No Retry on Client Errors ==========
 
     @Test
-    fun `does not retry on 400 bad request`() {
+    fun `does not retry on 400 bad request`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(400))
 
         val result = client.get(mockWebServer.url("/test").toString())
@@ -232,7 +233,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `does not retry on 401 unauthorized`() {
+    fun `does not retry on 401 unauthorized`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(401))
 
         val result = client.get(mockWebServer.url("/test").toString())
@@ -243,7 +244,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `does not retry on 403 forbidden`() {
+    fun `does not retry on 403 forbidden`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(403))
 
         val result = client.get(mockWebServer.url("/test").toString())
@@ -254,7 +255,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `does not retry on 404 not found`() {
+    fun `does not retry on 404 not found`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(404))
 
         val result = client.get(mockWebServer.url("/test").toString())
@@ -266,7 +267,7 @@ class WebDavClientResilienceTest {
     // ========== Method-Specific Tests ==========
 
     @Test
-    fun `propfind retries on server error`() {
+    fun `propfind retries on server error`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(500))
         mockWebServer.enqueue(
             MockResponse()
@@ -284,7 +285,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `report retries on server error`() {
+    fun `report retries on server error`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(500))
         mockWebServer.enqueue(
             MockResponse()
@@ -302,7 +303,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `put retries on server error`() {
+    fun `put retries on server error`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(500))
         mockWebServer.enqueue(
             MockResponse()
@@ -321,7 +322,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `delete retries on server error`() {
+    fun `delete retries on server error`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(500))
         mockWebServer.enqueue(MockResponse().setResponseCode(204))
 
@@ -332,7 +333,7 @@ class WebDavClientResilienceTest {
     }
 
     @Test
-    fun `mkcalendar retries on server error`() {
+    fun `mkcalendar retries on server error`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(500))
         mockWebServer.enqueue(MockResponse().setResponseCode(201))
 
@@ -348,7 +349,7 @@ class WebDavClientResilienceTest {
     // ========== Empty Response Handling ==========
 
     @Test
-    fun `handles empty response body`() {
+    fun `handles empty response body`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(200))
 
         val result = client.get(mockWebServer.url("/test").toString())

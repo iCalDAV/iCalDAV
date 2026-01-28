@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.DisplayName
+import kotlinx.coroutines.test.runTest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -108,7 +109,7 @@ class CalDavClientComprehensiveTest {
     inner class FetchEventsTests {
 
         @Test
-        fun `fetchEvents returns parsed events`() {
+        fun `fetchEvents returns parsed events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -146,7 +147,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents with time range filters events`() {
+        fun `fetchEvents with time range filters events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -173,7 +174,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents handles empty calendar`() {
+        fun `fetchEvents handles empty calendar`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -194,7 +195,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents handles malformed iCal data`() {
+        fun `fetchEvents handles malformed iCal data`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -229,7 +230,7 @@ END:VCALENDAR</C:calendar-data>
     inner class FetchEventsByHrefTests {
 
         @Test
-        fun `fetchEventsByHref returns specific events`() {
+        fun `fetchEventsByHref returns specific events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -272,7 +273,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEventsByHref with empty list returns empty result`() {
+        fun `fetchEventsByHref with empty list returns empty result`() = runTest {
             val result = calDavClient.fetchEventsByHref(
                 serverUrl("/cal/"),
                 emptyList()
@@ -289,7 +290,7 @@ END:VCALENDAR</C:calendar-data>
     inner class GetCtagTests {
 
         @Test
-        fun `getCtag returns ctag value`() {
+        fun `getCtag returns ctag value`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/">
@@ -317,7 +318,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `getCtag handles missing ctag`() {
+        fun `getCtag handles missing ctag`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -348,7 +349,7 @@ END:VCALENDAR</C:calendar-data>
     inner class CreateEventTests {
 
         @Test
-        fun `createEvent sends PUT request`() {
+        fun `createEvent sends PUT request`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(201)
@@ -366,7 +367,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `createEvent sanitizes UID for URL`() {
+        fun `createEvent sanitizes UID for URL`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(201)
@@ -385,7 +386,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `createEvent returns etag`() {
+        fun `createEvent returns etag`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(201)
@@ -404,7 +405,7 @@ END:VCALENDAR</C:calendar-data>
     inner class UpdateEventTests {
 
         @Test
-        fun `updateEvent sends PUT with If-Match`() {
+        fun `updateEvent sends PUT with If-Match`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(204)
@@ -426,7 +427,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `updateEvent handles 412 precondition failed`() {
+        fun `updateEvent handles 412 precondition failed`() = runTest {
             server.enqueue(MockResponse().setResponseCode(412))
 
             val event = createTestEvent()
@@ -440,7 +441,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `updateEvent without etag omits If-Match`() {
+        fun `updateEvent without etag omits If-Match`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(204)
@@ -459,7 +460,7 @@ END:VCALENDAR</C:calendar-data>
     inner class DeleteEventTests {
 
         @Test
-        fun `deleteEvent sends DELETE request`() {
+        fun `deleteEvent sends DELETE request`() = runTest {
             server.enqueue(MockResponse().setResponseCode(204))
 
             val result = calDavClient.deleteEvent(serverUrl("/cal/event.ics"))
@@ -471,7 +472,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `deleteEvent with etag sends If-Match`() {
+        fun `deleteEvent with etag sends If-Match`() = runTest {
             server.enqueue(MockResponse().setResponseCode(204))
 
             calDavClient.deleteEvent(serverUrl("/cal/event.ics"), etag = "current-etag")
@@ -481,7 +482,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `deleteEvent handles 412 precondition failed`() {
+        fun `deleteEvent handles 412 precondition failed`() = runTest {
             server.enqueue(MockResponse().setResponseCode(412))
 
             val result = calDavClient.deleteEvent(
@@ -498,7 +499,7 @@ END:VCALENDAR</C:calendar-data>
     inner class SyncCollectionTests {
 
         @Test
-        fun `syncCollection initial sync returns all events`() {
+        fun `syncCollection initial sync returns all events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -539,7 +540,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `syncCollection incremental sync with token`() {
+        fun `syncCollection incremental sync with token`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -583,7 +584,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `syncCollection handles deleted events`() {
+        fun `syncCollection handles deleted events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -610,7 +611,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `syncCollection handles invalid token - 410 Gone`() {
+        fun `syncCollection handles invalid token - 410 Gone`() = runTest {
             server.enqueue(MockResponse().setResponseCode(410))
 
             val result = calDavClient.syncCollection(
@@ -627,7 +628,7 @@ END:VCALENDAR</C:calendar-data>
     inner class ErrorHandlingTests {
 
         @Test
-        fun `handles 401 unauthorized`() {
+        fun `handles 401 unauthorized`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(401)
@@ -640,7 +641,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles 403 forbidden`() {
+        fun `handles 403 forbidden`() = runTest {
             server.enqueue(MockResponse().setResponseCode(403))
 
             val result = calDavClient.fetchEvents(serverUrl("/cal/"))
@@ -649,7 +650,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles 404 not found`() {
+        fun `handles 404 not found`() = runTest {
             server.enqueue(MockResponse().setResponseCode(404))
 
             val result = calDavClient.fetchEvents(serverUrl("/nonexistent/"))
@@ -658,7 +659,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `handles 500 server error`() {
+        fun `handles 500 server error`() = runTest {
             server.enqueue(MockResponse().setResponseCode(500))
 
             val result = calDavClient.fetchEvents(serverUrl("/cal/"))
@@ -672,7 +673,7 @@ END:VCALENDAR</C:calendar-data>
     inner class RecurringEventsTests {
 
         @Test
-        fun `fetchEvents handles recurring events`() {
+        fun `fetchEvents handles recurring events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -710,7 +711,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEvents handles recurring with overrides`() {
+        fun `fetchEvents handles recurring with overrides`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -760,7 +761,7 @@ END:VCALENDAR</C:calendar-data>
     inner class AllDayEventsTests {
 
         @Test
-        fun `fetchEvents handles all-day events`() {
+        fun `fetchEvents handles all-day events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -802,7 +803,7 @@ END:VCALENDAR</C:calendar-data>
     inner class RawIcalPreservationTests {
 
         @Test
-        fun `fetchEvents preserves rawIcal`() {
+        fun `fetchEvents preserves rawIcal`() = runTest {
             val icalData = """BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Test//Test//EN
@@ -848,7 +849,7 @@ END:VCALENDAR"""
         }
 
         @Test
-        fun `multi-event ics shares rawIcal`() {
+        fun `multi-event ics shares rawIcal`() = runTest {
             val icalData = """BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -902,7 +903,7 @@ END:VCALENDAR"""
         }
 
         @Test
-        fun `rawIcal contains complete VCALENDAR`() {
+        fun `rawIcal contains complete VCALENDAR`() = runTest {
             val icalData = """BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Test//Test//EN
@@ -958,7 +959,7 @@ END:VCALENDAR"""
         }
 
         @Test
-        fun `syncCollection preserves rawIcal`() {
+        fun `syncCollection preserves rawIcal`() = runTest {
             val icalData = """BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -1002,7 +1003,7 @@ END:VCALENDAR"""
         }
 
         @Test
-        fun `getEvent preserves rawIcal`() {
+        fun `getEvent preserves rawIcal`() = runTest {
             val icalData = """BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -1065,7 +1066,7 @@ END:VCALENDAR"""
     inner class RealWorldEdgeCasesTests {
 
         @Test
-        fun `handles iCloud weird response codes`() {
+        fun `handles iCloud weird response codes`() = runTest {
             // iCloud sometimes returns 207 with unexpected content
             server.enqueue(
                 MockResponse()
@@ -1080,7 +1081,7 @@ END:VCALENDAR"""
         }
 
         @Test
-        fun `handles events with very long UIDs`() {
+        fun `handles events with very long UIDs`() = runTest {
             val longUid = "a".repeat(500) + "@domain.com"
 
             server.enqueue(
@@ -1096,7 +1097,7 @@ END:VCALENDAR"""
         }
 
         @Test
-        fun `handles concurrent event modifications gracefully`() {
+        fun `handles concurrent event modifications gracefully`() = runTest {
             // First attempt fails with 412
             server.enqueue(MockResponse().setResponseCode(412))
 

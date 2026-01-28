@@ -32,11 +32,17 @@ dependencies {
     // For lower API levels, enable core library desugaring in your Android app
     implementation("dnsjava:dnsjava:3.5.2")
 
+    // XmlPullParser for efficient XML parsing (used by MultiStatusParser, AclParser, etc.)
+    // On Android, the built-in XmlPullParser is used; kxml2 provides the JVM implementation
+    implementation("net.sf.kxml:kxml2:2.3.0")
+
     // Testing
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation(kotlin("test"))
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    // Note: kxml2 is now an implementation dependency above
 }
 
 java {

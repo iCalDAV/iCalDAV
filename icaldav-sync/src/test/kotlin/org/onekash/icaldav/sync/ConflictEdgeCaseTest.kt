@@ -15,6 +15,7 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.test.runTest
 
 /**
  * Conflict Edge Case Tests
@@ -53,7 +54,7 @@ class ConflictEdgeCaseTest {
     inner class DeleteVsModifyConflictTests {
 
         @Test
-        fun `detects server deleted while locally modified`() {
+        fun `detects server deleted while locally modified`() = runTest {
             // Scenario: Event exists locally with changes, but server deleted it
             val localEvent = createLocalEvent("event1", "Locally Modified Title")
 
@@ -101,7 +102,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `detects locally deleted while server modified`() {
+        fun `detects locally deleted while server modified`() = runTest {
             // Scenario: Event deleted locally, but server has newer version
             val serverEvent = createServerEvent("event1", "Server Updated Title", etag = "new-etag")
 
@@ -149,7 +150,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `resolves delete vs modify with USE_REMOTE - deletes locally`() {
+        fun `resolves delete vs modify with USE_REMOTE - deletes locally`() = runTest {
             val localEvent = createLocalEvent("event1", "My Local Changes")
 
             val previousState = SyncState(
@@ -191,7 +192,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `resolves delete vs modify with USE_LOCAL - preserves local event intent`() {
+        fun `resolves delete vs modify with USE_LOCAL - preserves local event intent`() = runTest {
             val localEvent = createLocalEvent("event1", "My Important Event")
 
             val previousState = SyncState(
@@ -243,7 +244,7 @@ class ConflictEdgeCaseTest {
     inner class DeleteVsDeleteTests {
 
         @Test
-        fun `handles both sides deleted same event gracefully`() {
+        fun `handles both sides deleted same event gracefully`() = runTest {
             // Scenario: Event deleted both locally and on server
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
@@ -278,7 +279,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `cleans up state for doubly-deleted events`() {
+        fun `cleans up state for doubly-deleted events`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "old-ctag",
@@ -333,7 +334,7 @@ class ConflictEdgeCaseTest {
     inner class MultipleConflictTests {
 
         @Test
-        fun `handles multiple conflicts in single sync`() {
+        fun `handles multiple conflicts in single sync`() = runTest {
             val localEvent1 = createLocalEvent("event1", "Local 1")
             val localEvent2 = createLocalEvent("event2", "Local 2")
             val serverEvent1 = createServerEvent("event1", "Server 1", etag = "new-etag1")
@@ -385,7 +386,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `mixed conflict resolutions in single sync`() {
+        fun `mixed conflict resolutions in single sync`() = runTest {
             val localEvent1 = createLocalEvent("event1", "Keep Local")
             val localEvent2 = createLocalEvent("event2", "Override Me")
             val serverEvent1 = createServerEvent("event1", "Server 1", etag = "new-etag1")
@@ -443,7 +444,7 @@ class ConflictEdgeCaseTest {
     inner class PartialFailureTests {
 
         @Test
-        fun `continues processing after single event failure`() {
+        fun `continues processing after single event failure`() = runTest {
             val event1 = createServerEvent("event1")
             val event2 = createServerEvent("event2")
             val event3 = createServerEvent("event3")
@@ -470,7 +471,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `handles handler exception during upsert`() {
+        fun `handles handler exception during upsert`() = runTest {
             val event = createServerEvent("event1")
 
             whenever(calDavClient.getCtag(calendarUrl))
@@ -497,7 +498,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `handles handler exception during delete`() {
+        fun `handles handler exception during delete`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "old-ctag",
@@ -537,7 +538,7 @@ class ConflictEdgeCaseTest {
     inner class StateCorruptionTests {
 
         @Test
-        fun `recovers from mismatched etag map`() {
+        fun `recovers from mismatched etag map`() = runTest {
             // State has etags for events that no longer exist
             val corruptState = SyncState(
                 calendarUrl = calendarUrl,
@@ -589,7 +590,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `handles empty state gracefully`() {
+        fun `handles empty state gracefully`() = runTest {
             val emptyState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = null,
@@ -620,7 +621,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `handles URL map inconsistency`() {
+        fun `handles URL map inconsistency`() = runTest {
             // urlMap has entry but etags doesn't (inconsistent state)
             val inconsistentState = SyncState(
                 calendarUrl = calendarUrl,
@@ -652,7 +653,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `recovers from corrupted lastSync timestamp`() {
+        fun `recovers from corrupted lastSync timestamp`() = runTest {
             // Future timestamp (clock skew or corruption)
             val futureState = SyncState(
                 calendarUrl = calendarUrl,
@@ -689,7 +690,7 @@ class ConflictEdgeCaseTest {
     inner class SyncTokenTests {
 
         @Test
-        fun `handles sync token in state`() {
+        fun `handles sync token in state`() = runTest {
             // Test that sync engine can handle state with sync token
             // The actual behavior (use token vs fetch all) depends on implementation
             val stateWithToken = SyncState(
@@ -730,7 +731,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `falls back to full sync when sync token invalid`() {
+        fun `falls back to full sync when sync token invalid`() = runTest {
             val stateWithToken = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "old-ctag",
@@ -770,7 +771,7 @@ class ConflictEdgeCaseTest {
     inner class IdempotencyTests {
 
         @Test
-        fun `repeated sync with no changes produces same result`() {
+        fun `repeated sync with no changes produces same result`() = runTest {
             val event = createServerEvent("event1")
 
             whenever(calDavClient.getCtag(calendarUrl))
@@ -813,7 +814,7 @@ class ConflictEdgeCaseTest {
         }
 
         @Test
-        fun `sync is idempotent for conflict resolution`() {
+        fun `sync is idempotent for conflict resolution`() = runTest {
             val localEvent = createLocalEvent("event1", "Local")
             val serverEvent = createServerEvent("event1", "Server", etag = "new-etag")
 
