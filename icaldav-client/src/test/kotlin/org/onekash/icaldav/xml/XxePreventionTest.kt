@@ -11,9 +11,13 @@ import kotlin.test.assertEquals
 /**
  * Security tests for XML parsing - XXE prevention and entity expansion attacks.
  *
- * The MultiStatusParser uses regex-based parsing which is inherently immune to
- * XXE attacks since it doesn't use an XML parser that processes external entities.
- * These tests document and verify this safety characteristic.
+ * The MultiStatusParser is immune to XXE attacks. With XmlPullParser:
+ * - DOCTYPE sections are stripped before parsing (prevents entity definitions)
+ * - Undefined entity references cause parse failure (fail-safe behavior)
+ * - External entities are never expanded
+ *
+ * These tests verify safe behavior whether parsing succeeds (with literal text)
+ * or fails (due to undefined entities) - both outcomes prevent XXE attacks.
  *
  * RFC 5323 (WebDAV SEARCH) and RFC 4918 (WebDAV) responses are parsed here.
  */
@@ -49,18 +53,26 @@ class XxePreventionTest {
 
             val result = parser.parse(maliciousXml)
 
-            // Parser should succeed (regex parsing ignores DOCTYPE)
-            assertTrue(result is DavResult.Success)
-            val multiStatus = result.getOrNull()!!
-
-            // The entity reference should remain as literal text, NOT expanded
-            val response = multiStatus.responses.firstOrNull()
-            assertTrue(response != null, "Should have parsed a response")
-            // &xxe; should either be literal or stripped, never /etc/passwd content
-            assertFalse(
-                response!!.href.contains("/etc/passwd"),
-                "XXE entity should not be expanded to file contents"
-            )
+            // Security requirement: XXE must NOT be expanded, ever
+            // Two safe outcomes:
+            // 1. ParseError - undefined entity causes failure (fail-safe)
+            // 2. Success with literal text (entity not expanded)
+            when (result) {
+                is DavResult.ParseError -> {
+                    // Safe: parsing failed due to undefined entity
+                    assertTrue(true, "Parse failure prevents XXE")
+                }
+                is DavResult.Success -> {
+                    // Safe: verify entity was NOT expanded
+                    val response = result.value.responses.firstOrNull()
+                    assertTrue(response != null, "Should have parsed a response")
+                    assertFalse(
+                        response!!.href.contains("/etc/passwd"),
+                        "XXE entity should not be expanded to file contents"
+                    )
+                }
+                else -> assertTrue(false, "Unexpected result type")
+            }
         }
 
         @Test
@@ -140,14 +152,22 @@ class XxePreventionTest {
 
             val result = parser.parse(maliciousXml)
 
-            // Should succeed quickly without memory explosion
-            assertTrue(result is DavResult.Success)
-            val multiStatus = result.getOrNull()!!
-
-            // Response href should NOT contain expanded "lol" strings
-            val href = multiStatus.responses.firstOrNull()?.href ?: ""
-            // If billion laughs were expanded, this would be millions of "lol"
-            assertTrue(href.length < 10000, "Entity expansion should not occur")
+            // Security requirement: entity expansion must NOT occur
+            // Safe outcomes:
+            // 1. ParseError - DOCTYPE stripped, undefined entity fails (XmlPullParser)
+            // 2. Success with literal text (regex behavior)
+            when (result) {
+                is DavResult.ParseError -> {
+                    // Safe: DOCTYPE stripped, entity undefined
+                    assertTrue(true, "Parse failure prevents billion laughs")
+                }
+                is DavResult.Success -> {
+                    val href = result.value.responses.firstOrNull()?.href ?: ""
+                    // If billion laughs were expanded, this would be millions of "lol"
+                    assertTrue(href.length < 10000, "Entity expansion should not occur")
+                }
+                else -> assertTrue(false, "Unexpected result type")
+            }
         }
 
         @Test
@@ -170,10 +190,20 @@ class XxePreventionTest {
 
             val result = parser.parse(maliciousXml)
 
-            assertTrue(result is DavResult.Success)
-            // Href should not contain expanded content
-            val href = result.getOrNull()!!.responses.firstOrNull()?.href ?: ""
-            assertFalse(href.contains("aaaa"), "Internal entities should not expand")
+            // Security requirement: entities must NOT expand
+            // Safe outcomes:
+            // 1. ParseError - DOCTYPE stripped, entities undefined
+            // 2. Success with literal text
+            when (result) {
+                is DavResult.ParseError -> {
+                    assertTrue(true, "Parse failure prevents quadratic blowup")
+                }
+                is DavResult.Success -> {
+                    val href = result.value.responses.firstOrNull()?.href ?: ""
+                    assertFalse(href.contains("aaaa"), "Internal entities should not expand")
+                }
+                else -> assertTrue(false, "Unexpected result type")
+            }
         }
     }
 
@@ -283,10 +313,15 @@ END:VCALENDAR]]></C:calendar-data>
 
             val result = parser.parse(xml)
 
-            // This is a malformed CDATA (contains ]]> inside)
-            // Regex parser will handle it gracefully - test passes if no exception thrown
-            // Result may be success or partial parse depending on implementation
-            assertTrue(result is DavResult.Success, "Parser should handle malformed CDATA gracefully")
+            // This is malformed XML (CDATA contains ]]> which terminates CDATA)
+            // Safe outcomes:
+            // 1. ParseError - malformed XML rejected (XmlPullParser behavior)
+            // 2. Success - partial content extracted (regex behavior)
+            // Both are acceptable - no security concern
+            assertTrue(
+                result is DavResult.Success || result is DavResult.ParseError,
+                "Parser should handle malformed CDATA safely (success or error)"
+            )
         }
     }
 

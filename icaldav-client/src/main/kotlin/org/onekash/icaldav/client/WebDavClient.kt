@@ -5,6 +5,9 @@ import org.onekash.icaldav.xml.MultiStatusParser
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -78,9 +81,10 @@ class WebDavClient(
          * auth headers on all requests including redirects.
          *
          * @param auth Authentication credentials to use
+         * @param userAgent User-Agent header to send with requests (identifies your application)
          * @return OkHttpClient configured for CalDAV with proper redirect handling
          */
-        fun withAuth(auth: DavAuth): OkHttpClient {
+        fun withAuth(auth: DavAuth, userAgent: String = "iCalDAV/1.0 (Kotlin)"): OkHttpClient {
             return OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(300, TimeUnit.SECONDS)  // 5 min for large calendars
@@ -90,7 +94,7 @@ class WebDavClient(
                     // Add auth header to ALL requests including redirects
                     val request = chain.request().newBuilder()
                         .header("Authorization", auth.toAuthHeader())
-                        .header("User-Agent", "iCalDAV/1.0")
+                        .header("User-Agent", userAgent)
                         .build()
 
                     var response = chain.proceed(request)
@@ -151,7 +155,7 @@ class WebDavClient(
      * @param preferMinimal If true, adds Prefer: return=minimal header to reduce response size
      * @return Parsed multistatus response
      */
-    fun propfind(
+    suspend fun propfind(
         url: String,
         body: String,
         depth: DavDepth = DavDepth.ZERO,
@@ -180,7 +184,7 @@ class WebDavClient(
      * @param preferMinimal If true, adds Prefer: return=minimal header to reduce response size
      * @return Parsed multistatus response
      */
-    fun report(
+    suspend fun report(
         url: String,
         body: String,
         depth: DavDepth = DavDepth.ONE,
@@ -209,7 +213,7 @@ class WebDavClient(
      * @param url Target URL (usually server root or calendar collection)
      * @return Server capabilities parsed from response headers
      */
-    fun options(url: String): DavResult<ServerCapabilities> {
+    suspend fun options(url: String): DavResult<ServerCapabilities> {
         val request = Request.Builder()
             .url(url)
             .method("OPTIONS", null)
@@ -242,7 +246,7 @@ class WebDavClient(
      * @param url Resource URL
      * @return Response body as string
      */
-    fun get(url: String): DavResult<String> {
+    suspend fun get(url: String): DavResult<String> {
         val request = Request.Builder()
             .url(url)
             .get()
@@ -273,7 +277,7 @@ class WebDavClient(
      * @param contentType Content type (defaults to text/calendar)
      * @return Response with new ETag if successful
      */
-    fun put(
+    suspend fun put(
         url: String,
         body: String,
         etag: String? = null,
@@ -325,7 +329,7 @@ class WebDavClient(
      * @param etag ETag for conditional delete (If-Match)
      * @return Success or error
      */
-    fun delete(
+    suspend fun delete(
         url: String,
         etag: String? = null
     ): DavResult<Unit> {
@@ -359,7 +363,7 @@ class WebDavClient(
      * @param body XML request body with calendar properties
      * @return Success or error
      */
-    fun mkcalendar(url: String, body: String): DavResult<Unit> {
+    suspend fun mkcalendar(url: String, body: String): DavResult<Unit> {
         val request = Request.Builder()
             .url(url)
             .method("MKCALENDAR", body.toRequestBody(xmlMediaType))
@@ -390,7 +394,7 @@ class WebDavClient(
      * @param body XML request body (from RequestBuilder.acl())
      * @return Success or error
      */
-    fun acl(url: String, body: String): DavResult<Unit> {
+    suspend fun acl(url: String, body: String): DavResult<Unit> {
         val request = Request.Builder()
             .url(url)
             .method("ACL", body.toRequestBody(xmlMediaType))
@@ -419,7 +423,7 @@ class WebDavClient(
      * @param recipients List of recipient email addresses
      * @return Raw XML response body for parsing by ScheduleResponseParser
      */
-    fun post(
+    suspend fun post(
         url: String,
         body: String,
         recipients: List<String>
@@ -470,7 +474,7 @@ class WebDavClient(
      * Execute request and parse multistatus response.
      * Uses retry logic and response size limiting.
      */
-    private fun executeAndParse(request: Request): DavResult<MultiStatus> {
+    private suspend fun executeAndParse(request: Request): DavResult<MultiStatus> {
         return executeWithRetry(request) { response ->
             when {
                 response.isSuccessful -> {
@@ -515,23 +519,23 @@ class WebDavClient(
      * @param handler Function to process the response and return a DavResult
      * @return DavResult from the handler, or NetworkError if all retries fail
      */
-    private fun <T> executeWithRetry(
+    private suspend fun <T> executeWithRetry(
         request: Request,
         handler: (Response) -> DavResult<T>
-    ): DavResult<T> {
+    ): DavResult<T> = withContext(Dispatchers.IO) {
         var lastException: IOException? = null
         var currentBackoff = INITIAL_BACKOFF_MS
 
         repeat(MAX_RETRIES + 1) { attempt ->
             try {
-                val response = httpClient.newCall(request).execute()
+                val response = httpClient.newCall(request).await()
 
                 // Handle 429 rate limiting
                 if (response.code == 429 && attempt < MAX_RETRIES) {
                     val retryAfter = parseRetryAfterHeader(response)
                     logger.fine("Rate limited (429), waiting ${retryAfter}ms before retry")
                     response.close()
-                    Thread.sleep(retryAfter)
+                    delay(retryAfter)
                     return@repeat // Retry
                 }
 
@@ -539,7 +543,7 @@ class WebDavClient(
                 if (response.code in 500..599 && attempt < MAX_RETRIES) {
                     logger.fine("Server error ${response.code}, retry after ${currentBackoff}ms")
                     response.close()
-                    Thread.sleep(currentBackoff)
+                    delay(currentBackoff)
                     currentBackoff = (currentBackoff * BACKOFF_MULTIPLIER)
                         .toLong()
                         .coerceIn(INITIAL_BACKOFF_MS, MAX_BACKOFF_MS)
@@ -547,12 +551,12 @@ class WebDavClient(
                 }
 
                 // Ensure response is closed after handler processes it
-                return response.use { handler(it) }
+                return@withContext response.use { handler(it) }
 
             } catch (e: SSLHandshakeException) {
                 // NEVER retry SSL errors - indicates security issue (cert problem, MITM)
                 logger.warning("SSL error (not retrying): ${e.message}")
-                return DavResult.networkError(e)
+                return@withContext DavResult.networkError(e)
             } catch (e: SocketTimeoutException) {
                 logger.fine("Socket timeout, attempt ${attempt + 1}")
                 lastException = e
@@ -564,21 +568,21 @@ class WebDavClient(
                 lastException = e
             } catch (e: IOException) {
                 if (!isRetryable(e)) {
-                    return DavResult.networkError(e)
+                    return@withContext DavResult.networkError(e)
                 }
                 logger.fine("Retryable IO error, attempt ${attempt + 1}: ${e.message}")
                 lastException = e
             }
 
             if (attempt < MAX_RETRIES) {
-                Thread.sleep(currentBackoff)
+                delay(currentBackoff)
                 currentBackoff = (currentBackoff * BACKOFF_MULTIPLIER)
                     .toLong()
                     .coerceIn(INITIAL_BACKOFF_MS, MAX_BACKOFF_MS)
             }
         }
 
-        return DavResult.networkError(lastException ?: IOException("Max retries exceeded"))
+        DavResult.networkError(lastException ?: IOException("Max retries exceeded"))
     }
 
     /**

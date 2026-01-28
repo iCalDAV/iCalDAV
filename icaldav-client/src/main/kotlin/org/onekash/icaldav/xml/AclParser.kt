@@ -1,12 +1,14 @@
 package org.onekash.icaldav.xml
 
 import org.onekash.icaldav.model.*
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
+import java.io.StringReader
 
 /**
  * Parser for WebDAV ACL XML responses per RFC 3744.
  *
- * Uses regex-based parsing for consistency with other parsers in this codebase
- * and for reliability with namespace variations (D:, d:, DAV:, etc.).
+ * Uses XmlPullParser for efficient parsing with automatic entity decoding.
  *
  * Handles parsing of:
  * - ACL property (list of ACEs)
@@ -24,14 +26,84 @@ object AclParser {
     fun parseAcl(xml: String): Acl {
         val aces = mutableListOf<Ace>()
 
-        // Match <ace> or <D:ace> or <d:ace> elements
-        val acePattern = Regex(
-            """<(?:[a-zA-Z]+:)?ace[^>]*>(.*?)</(?:[a-zA-Z]+:)?ace>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
+        try {
+            val parser = createParser(xml)
+            var currentAce: AceBuilder? = null
+            var inPrincipal = false
+            var inGrant = false
+            var inDeny = false
+            var inInherited = false
+            var inProperty = false
 
-        acePattern.findAll(xml).forEach { match ->
-            parseAce(match.groupValues[1])?.let { aces.add(it) }
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when (parser.name.lowercase()) {
+                            "ace" -> currentAce = AceBuilder()
+                            "principal" -> inPrincipal = true
+                            "grant" -> inGrant = true
+                            "deny" -> inDeny = true
+                            "inherited" -> inInherited = true
+                            "property" -> inProperty = true
+                            "href" -> {
+                                val href = readTextContent(parser)
+                                when {
+                                    inInherited && currentAce != null -> currentAce.inherited = href
+                                    inPrincipal && currentAce != null -> currentAce.principal = Principal.Href(href)
+                                }
+                            }
+                            "all" -> {
+                                // "all" can be a principal (<principal><all/>) or a privilege (<privilege><all/>)
+                                if (inPrincipal && currentAce != null) {
+                                    currentAce.principal = Principal.All
+                                } else {
+                                    addPrivilege(currentAce, Privilege.ALL, inGrant, inDeny)
+                                }
+                            }
+                            "authenticated" -> if (inPrincipal && currentAce != null) currentAce.principal = Principal.Authenticated
+                            "unauthenticated" -> if (inPrincipal && currentAce != null) currentAce.principal = Principal.Unauthenticated
+                            "self" -> if (inPrincipal && currentAce != null) currentAce.principal = Principal.Self
+                            "privilege" -> {
+                                // Next element inside privilege is the privilege name
+                            }
+                            // Standard privileges
+                            "read" -> addPrivilege(currentAce, Privilege.READ, inGrant, inDeny)
+                            "write" -> addPrivilege(currentAce, Privilege.WRITE, inGrant, inDeny)
+                            "write-properties" -> addPrivilege(currentAce, Privilege.WRITE_PROPERTIES, inGrant, inDeny)
+                            "write-content" -> addPrivilege(currentAce, Privilege.WRITE_CONTENT, inGrant, inDeny)
+                            "unlock" -> addPrivilege(currentAce, Privilege.UNLOCK, inGrant, inDeny)
+                            "read-acl" -> addPrivilege(currentAce, Privilege.READ_ACL, inGrant, inDeny)
+                            "read-current-user-privilege-set" -> addPrivilege(currentAce, Privilege.READ_CURRENT_USER_PRIVILEGE_SET, inGrant, inDeny)
+                            "write-acl" -> addPrivilege(currentAce, Privilege.WRITE_ACL, inGrant, inDeny)
+                            "bind" -> addPrivilege(currentAce, Privilege.BIND, inGrant, inDeny)
+                            "unbind" -> addPrivilege(currentAce, Privilege.UNBIND, inGrant, inDeny)
+                            else -> {
+                                // Handle property principal
+                                if (inProperty && inPrincipal && currentAce != null) {
+                                    currentAce.principal = Principal.Property(parser.name)
+                                }
+                            }
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        when (parser.name.lowercase()) {
+                            "ace" -> {
+                                currentAce?.build()?.let { aces.add(it) }
+                                currentAce = null
+                            }
+                            "principal" -> inPrincipal = false
+                            "grant" -> inGrant = false
+                            "deny" -> inDeny = false
+                            "inherited" -> inInherited = false
+                            "property" -> inProperty = false
+                        }
+                    }
+                }
+                eventType = parser.next()
+            }
+        } catch (e: Exception) {
+            // Return whatever we parsed
         }
 
         return Acl(aces)
@@ -46,16 +118,39 @@ object AclParser {
     fun parseCurrentUserPrivilegeSet(xml: String): CurrentUserPrivilegeSet {
         val privileges = mutableSetOf<Privilege>()
 
-        // Find current-user-privilege-set element
-        val cupsPattern = Regex(
-            """<(?:[a-zA-Z]+:)?current-user-privilege-set[^>]*>(.*?)</(?:[a-zA-Z]+:)?current-user-privilege-set>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
+        try {
+            val parser = createParser(xml)
+            var inCups = false
 
-        val cupsMatch = cupsPattern.find(xml)
-        if (cupsMatch != null) {
-            val cupsContent = cupsMatch.groupValues[1]
-            privileges.addAll(parsePrivileges(cupsContent))
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when (parser.name.lowercase()) {
+                            "current-user-privilege-set" -> inCups = true
+                            "read" -> if (inCups) privileges.add(Privilege.READ)
+                            "write" -> if (inCups) privileges.add(Privilege.WRITE)
+                            "write-properties" -> if (inCups) privileges.add(Privilege.WRITE_PROPERTIES)
+                            "write-content" -> if (inCups) privileges.add(Privilege.WRITE_CONTENT)
+                            "unlock" -> if (inCups) privileges.add(Privilege.UNLOCK)
+                            "read-acl" -> if (inCups) privileges.add(Privilege.READ_ACL)
+                            "read-current-user-privilege-set" -> if (inCups) privileges.add(Privilege.READ_CURRENT_USER_PRIVILEGE_SET)
+                            "write-acl" -> if (inCups) privileges.add(Privilege.WRITE_ACL)
+                            "bind" -> if (inCups) privileges.add(Privilege.BIND)
+                            "unbind" -> if (inCups) privileges.add(Privilege.UNBIND)
+                            "all" -> if (inCups) privileges.add(Privilege.ALL)
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        if (parser.name.lowercase() == "current-user-privilege-set") {
+                            inCups = false
+                        }
+                    }
+                }
+                eventType = parser.next()
+            }
+        } catch (e: Exception) {
+            // Return whatever we parsed
         }
 
         return CurrentUserPrivilegeSet(privileges)
@@ -70,161 +165,90 @@ object AclParser {
     fun parsePrincipalCollectionSet(xml: String): List<String> {
         val collections = mutableListOf<String>()
 
-        // Find principal-collection-set element
-        val pcsPattern = Regex(
-            """<(?:[a-zA-Z]+:)?principal-collection-set[^>]*>(.*?)</(?:[a-zA-Z]+:)?principal-collection-set>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
+        try {
+            val parser = createParser(xml)
+            var inPcs = false
 
-        val pcsMatch = pcsPattern.find(xml)
-        if (pcsMatch != null) {
-            val pcsContent = pcsMatch.groupValues[1]
-            // Extract hrefs
-            val hrefPattern = Regex(
-                """<(?:[a-zA-Z]+:)?href[^>]*>([^<]*)</(?:[a-zA-Z]+:)?href>""",
-                RegexOption.IGNORE_CASE
-            )
-            hrefPattern.findAll(pcsContent).forEach { match ->
-                val href = match.groupValues[1].trim()
-                if (href.isNotEmpty()) {
-                    collections.add(href)
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when (parser.name.lowercase()) {
+                            "principal-collection-set" -> inPcs = true
+                            "href" -> {
+                                if (inPcs) {
+                                    val href = readTextContent(parser).trim()
+                                    if (href.isNotEmpty()) {
+                                        collections.add(href)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        if (parser.name.lowercase() == "principal-collection-set") {
+                            inPcs = false
+                        }
+                    }
                 }
+                eventType = parser.next()
             }
+        } catch (e: Exception) {
+            // Return whatever we parsed
         }
 
         return collections
     }
 
-    /**
-     * Parse a single ACE element.
-     */
-    private fun parseAce(aceXml: String): Ace? {
-        val principal = parsePrincipal(aceXml) ?: return null
-        val grant = parseGrantOrDeny(aceXml, "grant")
-        val deny = parseGrantOrDeny(aceXml, "deny")
-        val inherited = parseInherited(aceXml)
-
-        return Ace(
-            principal = principal,
-            grant = grant,
-            deny = deny,
-            inherited = inherited
-        )
+    private fun createParser(xml: String): XmlPullParser {
+        val cleanXml = XmlParserUtils.stripXmlProlog(xml)
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = true
+        val parser = factory.newPullParser()
+        parser.setInput(StringReader(cleanXml))
+        return parser
     }
 
-    /**
-     * Parse principal from ACE.
-     */
-    private fun parsePrincipal(aceXml: String): Principal? {
-        // Find principal element
-        val principalPattern = Regex(
-            """<(?:[a-zA-Z]+:)?principal[^>]*>(.*?)</(?:[a-zA-Z]+:)?principal>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
+    private fun readTextContent(parser: XmlPullParser): String {
+        val content = StringBuilder()
+        var depth = 1
+        var eventType = parser.next()
 
-        val principalMatch = principalPattern.find(aceXml) ?: return null
-        val principalContent = principalMatch.groupValues[1]
-
-        // Check for href
-        val hrefPattern = Regex(
-            """<(?:[a-zA-Z]+:)?href[^>]*>([^<]*)</(?:[a-zA-Z]+:)?href>""",
-            RegexOption.IGNORE_CASE
-        )
-        val hrefMatch = hrefPattern.find(principalContent)
-        if (hrefMatch != null) {
-            return Principal.Href(hrefMatch.groupValues[1].trim())
-        }
-
-        // Check for all
-        if (principalContent.contains(Regex("""<(?:[a-zA-Z]+:)?all\s*/?>""", RegexOption.IGNORE_CASE))) {
-            return Principal.All
-        }
-
-        // Check for authenticated
-        if (principalContent.contains(Regex("""<(?:[a-zA-Z]+:)?authenticated\s*/?>""", RegexOption.IGNORE_CASE))) {
-            return Principal.Authenticated
-        }
-
-        // Check for unauthenticated
-        if (principalContent.contains(Regex("""<(?:[a-zA-Z]+:)?unauthenticated\s*/?>""", RegexOption.IGNORE_CASE))) {
-            return Principal.Unauthenticated
-        }
-
-        // Check for self
-        if (principalContent.contains(Regex("""<(?:[a-zA-Z]+:)?self\s*/?>""", RegexOption.IGNORE_CASE))) {
-            return Principal.Self
-        }
-
-        // Check for property
-        val propertyPattern = Regex(
-            """<(?:[a-zA-Z]+:)?property[^>]*>.*?<(?:[a-zA-Z]+:)?(\w+)[^>]*/?>.*?</(?:[a-zA-Z]+:)?property>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-        val propertyMatch = propertyPattern.find(principalContent)
-        if (propertyMatch != null) {
-            return Principal.Property(propertyMatch.groupValues[1])
-        }
-
-        return null
-    }
-
-    /**
-     * Parse grant or deny privileges.
-     */
-    private fun parseGrantOrDeny(aceXml: String, elementName: String): Set<Privilege> {
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?$elementName[^>]*>(.*?)</(?:[a-zA-Z]+:)?$elementName>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        val match = pattern.find(aceXml) ?: return emptySet()
-        return parsePrivileges(match.groupValues[1])
-    }
-
-    /**
-     * Parse privileges from XML content.
-     */
-    private fun parsePrivileges(xml: String): Set<Privilege> {
-        val privileges = mutableSetOf<Privilege>()
-
-        // Find privilege elements
-        val privilegePattern = Regex(
-            """<(?:[a-zA-Z]+:)?privilege[^>]*>(.*?)</(?:[a-zA-Z]+:)?privilege>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        privilegePattern.findAll(xml).forEach { match ->
-            val privilegeContent = match.groupValues[1]
-            // Extract the privilege name (first element inside privilege)
-            val namePattern = Regex("""<(?:[a-zA-Z]+:)?([\w-]+)[^>]*/?>""", RegexOption.IGNORE_CASE)
-            val nameMatch = namePattern.find(privilegeContent)
-            if (nameMatch != null) {
-                val privName = nameMatch.groupValues[1]
-                Privilege.fromDavName(privName)?.let { privileges.add(it) }
+        while (depth > 0) {
+            when (eventType) {
+                XmlPullParser.TEXT -> content.append(parser.text)
+                XmlPullParser.CDSECT -> content.append(parser.text)
+                XmlPullParser.START_TAG -> depth++
+                XmlPullParser.END_TAG -> depth--
             }
+            if (depth > 0) eventType = parser.next()
         }
 
-        return privileges
+        return content.toString().trim()
     }
 
-    /**
-     * Parse inherited URL from ACE.
-     */
-    private fun parseInherited(aceXml: String): String? {
-        val inheritedPattern = Regex(
-            """<(?:[a-zA-Z]+:)?inherited[^>]*>(.*?)</(?:[a-zA-Z]+:)?inherited>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
+    private fun addPrivilege(ace: AceBuilder?, privilege: Privilege, inGrant: Boolean, inDeny: Boolean) {
+        if (ace == null) return
+        when {
+            inGrant -> ace.grant.add(privilege)
+            inDeny -> ace.deny.add(privilege)
+        }
+    }
 
-        val inheritedMatch = inheritedPattern.find(aceXml) ?: return null
-        val inheritedContent = inheritedMatch.groupValues[1]
+    private class AceBuilder {
+        var principal: Principal? = null
+        val grant = mutableSetOf<Privilege>()
+        val deny = mutableSetOf<Privilege>()
+        var inherited: String? = null
 
-        // Extract href
-        val hrefPattern = Regex(
-            """<(?:[a-zA-Z]+:)?href[^>]*>([^<]*)</(?:[a-zA-Z]+:)?href>""",
-            RegexOption.IGNORE_CASE
-        )
-        val hrefMatch = hrefPattern.find(inheritedContent)
-        return hrefMatch?.groupValues?.get(1)?.trim()
+        fun build(): Ace? {
+            val p = principal ?: return null
+            return Ace(
+                principal = p,
+                grant = grant.toSet(),
+                deny = deny.toSet(),
+                inherited = inherited
+            )
+        }
     }
 }

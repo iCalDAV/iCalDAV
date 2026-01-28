@@ -18,6 +18,8 @@ import org.onekash.icaldav.model.EventStatus
 import org.onekash.icaldav.model.LinkRelationType
 import org.onekash.icaldav.model.RelationType
 import org.onekash.icaldav.model.Transparency
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
@@ -99,7 +101,7 @@ class ICloudIntegrationTest {
     }
 
     @AfterAll
-    fun cleanup() {
+    fun cleanup() = runBlocking {
         println("=== Cleaning up ${createdEventUrls.size} test events ===")
         createdEventUrls.forEach { (url, etag) ->
             try {
@@ -134,7 +136,7 @@ class ICloudIntegrationTest {
      * Find event by UID using REPORT query (handles iCloud eventual consistency better than GET).
      * Returns the event if found, null otherwise.
      */
-    private fun findEventByUid(uid: String, maxRetries: Int = 5): EventWithMetadata? {
+    private suspend fun findEventByUid(uid: String, maxRetries: Int = 5): EventWithMetadata? {
         var delay = 2000L
         repeat(maxRetries) { attempt ->
             val now = Instant.now()
@@ -160,7 +162,7 @@ class ICloudIntegrationTest {
         return null
     }
 
-    private fun createAndTrackEvent(uid: String, icalData: String): EventCreateResult {
+    private suspend fun createAndTrackEvent(uid: String, icalData: String): EventCreateResult {
         assertNotNull(defaultCalendarUrl, "Calendar URL required")
 
         val result = calDavClient.createEventRaw(
@@ -180,7 +182,7 @@ class ICloudIntegrationTest {
     /**
      * Fetch and verify event exists using REPORT (handles iCloud eventual consistency).
      */
-    private fun fetchAndVerify(uid: String): EventWithMetadata {
+    private suspend fun fetchAndVerify(uid: String): EventWithMetadata {
         val event = findEventByUid(uid)
         assertNotNull(event, "Should find event with UID: $uid")
         return event!!
@@ -191,7 +193,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(1)
     @DisplayName("1. Discover principal URL")
-    fun `discover principal URL`() {
+    fun `discover principal URL`() = runTest {
         val result = discovery.discoverPrincipal(serverUrl)
 
         println("Principal discovery result: $result")
@@ -206,7 +208,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(2)
     @DisplayName("2. Discover calendar home URL")
-    fun `discover calendar home URL`() {
+    fun `discover calendar home URL`() = runTest {
         Assumptions.assumeTrue(principalUrl != null, "Principal URL required")
 
         val fullPrincipalUrl = if (principalUrl!!.startsWith("http")) principalUrl!!
@@ -226,7 +228,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(3)
     @DisplayName("3. List calendars")
-    fun `list calendars`() {
+    fun `list calendars`() = runTest {
         Assumptions.assumeTrue(calendarHomeUrl != null, "Calendar home URL required")
 
         val fullHomeUrl = if (calendarHomeUrl!!.startsWith("http")) calendarHomeUrl!!
@@ -261,7 +263,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(4)
     @DisplayName("4. Full discovery flow")
-    fun `full discovery flow returns complete account`() {
+    fun `full discovery flow returns complete account`() = runTest {
         val result = calDavClient.discoverAccount(serverUrl)
 
         assertTrue(result is DavResult.Success, "Should discover account: $result")
@@ -284,7 +286,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(10)
     @DisplayName("10. Create basic event")
-    fun `create basic event`() {
+    fun `create basic event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("basic")
@@ -320,7 +322,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(11)
     @DisplayName("11. Update event and verify ETag changes")
-    fun `update event changes ETag`() {
+    fun `update event changes ETag`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("update-test")
@@ -386,7 +388,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(20)
     @DisplayName("20. Create all-day event (DATE format)")
-    fun `create all-day event with DATE format`() {
+    fun `create all-day event with DATE format`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("allday")
@@ -420,7 +422,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(21)
     @DisplayName("21. Create multi-day event")
-    fun `create multi-day spanning event`() {
+    fun `create multi-day spanning event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("multiday")
@@ -453,7 +455,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(22)
     @DisplayName("22. Create week-long all-day event")
-    fun `create week-long all-day event`() {
+    fun `create week-long all-day event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("weeklong")
@@ -486,7 +488,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(23)
     @DisplayName("23. Create all-day event across month boundary")
-    fun `create all-day event spanning month boundary`() {
+    fun `create all-day event spanning month boundary`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("month-span")
@@ -519,7 +521,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(24)
     @DisplayName("24. Create recurring all-day event")
-    fun `create recurring all-day event`() {
+    fun `create recurring all-day event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("recurring-allday")
@@ -554,7 +556,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(25)
     @DisplayName("25. Create yearly recurring event (birthday/anniversary)")
-    fun `create yearly recurring event`() {
+    fun `create yearly recurring event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("yearly-recur")
@@ -588,7 +590,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(26)
     @DisplayName("26. Create bi-weekly recurring event")
-    fun `create bi-weekly recurring event`() {
+    fun `create bi-weekly recurring event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("biweekly-recur")
@@ -625,7 +627,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(30)
     @DisplayName("30. Create daily recurring event")
-    fun `create daily recurring event with COUNT`() {
+    fun `create daily recurring event with COUNT`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("daily-recur")
@@ -661,7 +663,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(31)
     @DisplayName("31. Create weekly recurring event with BYDAY")
-    fun `create weekly recurring event on specific days`() {
+    fun `create weekly recurring event on specific days`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("weekly-recur")
@@ -697,7 +699,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(32)
     @DisplayName("32. Create monthly recurring event")
-    fun `create monthly recurring event on specific day`() {
+    fun `create monthly recurring event on specific day`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("monthly-recur")
@@ -732,7 +734,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(33)
     @DisplayName("33. Create recurring event with UNTIL date")
-    fun `create recurring event ending on specific date`() {
+    fun `create recurring event ending on specific date`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("until-recur")
@@ -770,7 +772,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(40)
     @DisplayName("40. Create recurring event with EXDATE (cancelled occurrence)")
-    fun `create recurring event with excluded date`() {
+    fun `create recurring event with excluded date`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("exdate-recur")
@@ -805,7 +807,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(41)
     @DisplayName("41. Create recurring event with modified exception (RECURRENCE-ID)")
-    fun `create recurring event with modified occurrence`() {
+    fun `create recurring event with modified occurrence`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("exception-recur")
@@ -850,7 +852,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(42)
     @DisplayName("42. Create recurring event with multiple EXDATE")
-    fun `create recurring event with multiple excluded dates`() {
+    fun `create recurring event with multiple excluded dates`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("multi-exdate")
@@ -889,7 +891,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(50)
     @DisplayName("50. Create event with explicit VTIMEZONE")
-    fun `create event with VTIMEZONE component`() {
+    fun `create event with VTIMEZONE component`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("timezone")
@@ -942,7 +944,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(60)
     @DisplayName("60. Create event with VALARM reminder")
-    fun `create event with display alarm`() {
+    fun `create event with display alarm`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("alarm")
@@ -980,7 +982,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(61)
     @DisplayName("61. Create event with multiple alarms")
-    fun `create event with multiple reminders`() {
+    fun `create event with multiple reminders`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("multi-alarm")
@@ -1029,7 +1031,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(70)
     @DisplayName("70. Create event with Unicode characters")
-    fun `create event with international characters`() {
+    fun `create event with international characters`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("unicode")
@@ -1063,7 +1065,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(71)
     @DisplayName("71. Create event with special characters")
-    fun `create event with special iCal characters`() {
+    fun `create event with special iCal characters`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("special-chars")
@@ -1097,7 +1099,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(72)
     @DisplayName("72. Create event with long description")
-    fun `create event with very long description`() {
+    fun `create event with very long description`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("long-desc")
@@ -1137,7 +1139,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(73)
     @DisplayName("73. Create event with URL property")
-    fun `create event with URL link`() {
+    fun `create event with URL link`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("with-url")
@@ -1173,7 +1175,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(80)
     @DisplayName("80. Get ctag for change detection")
-    fun `get ctag from calendar`() {
+    fun `get ctag from calendar`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val result = calDavClient.getCtag(defaultCalendarUrl!!)
@@ -1194,7 +1196,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(81)
     @DisplayName("81. Initial sync-collection (empty token)")
-    fun `initial sync collection returns all events`() {
+    fun `initial sync collection returns all events`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val result = calDavClient.syncCollection(
@@ -1222,7 +1224,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(82)
     @DisplayName("82. Incremental sync after creating new event")
-    fun `incremental sync detects new event`() {
+    fun `incremental sync detects new event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
         Assumptions.assumeTrue(lastSyncToken != null, "Need sync token from previous test")
 
@@ -1280,7 +1282,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(83)
     @DisplayName("83. Fetch events in date range")
-    fun `fetch events in date range`() {
+    fun `fetch events in date range`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val start = Instant.now()
@@ -1305,7 +1307,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(84)
     @DisplayName("84. Fetch events by href (calendar-multiget)")
-    fun `fetchEventsByHref returns specific events`() {
+    fun `fetchEventsByHref returns specific events`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid1 = generateUid("multiget-1")
@@ -1364,7 +1366,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(85)
     @DisplayName("85. Fetch events by href with empty list")
-    fun `fetchEventsByHref with empty list returns empty result`() {
+    fun `fetchEventsByHref with empty list returns empty result`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val result = calDavClient.fetchEventsByHref(
@@ -1383,7 +1385,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(86)
     @DisplayName("86. Get sync-token from calendar")
-    fun `getSyncToken returns valid token`() {
+    fun `getSyncToken returns valid token`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val result = calDavClient.getSyncToken(defaultCalendarUrl!!)
@@ -1403,7 +1405,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(87)
     @DisplayName("87. Fetch ETags only in date range")
-    fun `fetchEtagsInRange returns etags without event data`() {
+    fun `fetchEtagsInRange returns etags without event data`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val start = Instant.now()
@@ -1430,7 +1432,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(88)
     @DisplayName("88. Delete event explicitly")
-    fun `deleteEvent removes event from calendar`() {
+    fun `deleteEvent removes event from calendar`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("delete-test")
@@ -1464,7 +1466,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(89)
     @DisplayName("89. Get event returns 404 for non-existent event")
-    fun `getEvent returns 404 for missing event`() {
+    fun `getEvent returns 404 for missing event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val fakeUrl = "$defaultCalendarUrl/non-existent-event-${UUID.randomUUID()}.ics"
@@ -1484,7 +1486,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(90)
     @DisplayName("90. ETag conflict detection (concurrent modification)")
-    fun `etag mismatch prevents update`() {
+    fun `etag mismatch prevents update`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("etag-conflict")
@@ -1543,7 +1545,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(91)
     @DisplayName("91. Create event using typed ICalEvent API")
-    fun `createEvent with ICalEvent object`() {
+    fun `createEvent with ICalEvent object`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("typed-create")
@@ -1598,7 +1600,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(92)
     @DisplayName("92. buildEventUrl sanitizes UID correctly")
-    fun `buildEventUrl creates safe URLs`() {
+    fun `buildEventUrl creates safe URLs`() = runTest {
         val calendarUrl = "https://example.com/calendars/user/calendar"
 
         val url1 = calDavClient.buildEventUrl(calendarUrl, "simple-uid-123")
@@ -1615,7 +1617,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(100)
     @DisplayName("100. Fetch events from non-existent calendar returns error")
-    fun `fetchEvents from invalid calendar URL fails`() {
+    fun `fetchEvents from invalid calendar URL fails`() = runTest {
         val fakeCalendarUrl = "$serverUrl/calendars/$username/non-existent-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.fetchEvents(
@@ -1635,7 +1637,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(101)
     @DisplayName("101. Create event with duplicate UID fails (If-None-Match)")
-    fun `createEventRaw with duplicate UID fails`() {
+    fun `createEventRaw with duplicate UID fails`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("duplicate-test")
@@ -1686,7 +1688,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(102)
     @DisplayName("102. Invalid authentication fails")
-    fun `client with wrong credentials fails`() {
+    fun `client with wrong credentials fails`() = runTest {
         val badClient = CalDavClient.withBasicAuth("wronguser", "wrongpassword123")
 
         val result = badClient.getCtag(defaultCalendarUrl!!)
@@ -1709,7 +1711,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(103)
     @DisplayName("103. Empty UID throws IllegalArgumentException")
-    fun `buildEventUrl rejects empty UID`() {
+    fun `buildEventUrl rejects empty UID`() = runTest {
         val calendarUrl = "https://example.com/calendars/user/calendar"
 
         val exception = assertThrows<IllegalArgumentException> {
@@ -1724,7 +1726,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(120)
     @DisplayName("120. Event with COLOR property (RFC 7986)")
-    fun `event with COLOR property`() {
+    fun `event with COLOR property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("color")
@@ -1756,7 +1758,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(121)
     @DisplayName("121. Event with CATEGORIES property")
-    fun `event with CATEGORIES property`() {
+    fun `event with CATEGORIES property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("categories")
@@ -1790,7 +1792,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(130)
     @DisplayName("130. Event with ORGANIZER property")
-    fun `event with ORGANIZER property`() {
+    fun `event with ORGANIZER property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("organizer")
@@ -1822,7 +1824,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(131)
     @DisplayName("131. Event with ATTENDEE properties")
-    fun `event with ATTENDEE properties`() {
+    fun `event with ATTENDEE properties`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("attendees")
@@ -1858,7 +1860,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(140)
     @DisplayName("140. Event with DURATION instead of DTEND")
-    fun `event with DURATION property`() {
+    fun `event with DURATION property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("duration")
@@ -1889,7 +1891,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(141)
     @DisplayName("141. Event with emoji in summary")
-    fun `event with emoji in summary`() {
+    fun `event with emoji in summary`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("emoji")
@@ -1922,7 +1924,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(142)
     @DisplayName("142. Event with zero-duration (point in time)")
-    fun `event with zero duration`() {
+    fun `event with zero duration`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("zero-dur")
@@ -1950,7 +1952,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(143)
     @DisplayName("143. Event with complex RRULE (5 BYDAY values)")
-    fun `event with complex RRULE`() {
+    fun `event with complex RRULE`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("complex-rrule")
@@ -1985,7 +1987,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(160)
     @DisplayName("160. List calendars shows expected properties")
-    fun `calendar listing includes properties`() {
+    fun `calendar listing includes properties`() = runTest {
         val result = calDavClient.discoverAccount(serverUrl)
 
         when (result) {
@@ -2009,7 +2011,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(170)
     @DisplayName("170. Event with custom X-properties preserved in rawIcal")
-    fun `event with custom properties preserved in rawIcal`() {
+    fun `event with custom properties preserved in rawIcal`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("x-props")
@@ -2051,7 +2053,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(180)
     @DisplayName("180. Event with PRIORITY property")
-    fun `event with PRIORITY property`() {
+    fun `event with PRIORITY property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("priority")
@@ -2080,7 +2082,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(181)
     @DisplayName("181. Event with CLASS property (PRIVATE)")
-    fun `event with CLASS property`() {
+    fun `event with CLASS property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("class")
@@ -2109,7 +2111,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(182)
     @DisplayName("182. Event with TRANSP:TRANSPARENT")
-    fun `event with TRANSP TRANSPARENT`() {
+    fun `event with TRANSP TRANSPARENT`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("transp")
@@ -2141,7 +2143,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(183)
     @DisplayName("183. Event STATUS:TENTATIVE")
-    fun `event with STATUS TENTATIVE`() {
+    fun `event with STATUS TENTATIVE`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("status-tent")
@@ -2170,7 +2172,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(184)
     @DisplayName("184. Event STATUS:CANCELLED")
-    fun `event with STATUS CANCELLED`() {
+    fun `event with STATUS CANCELLED`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("status-canc")
@@ -2199,7 +2201,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(185)
     @DisplayName("185. Event with GEO property")
-    fun `event with GEO property`() {
+    fun `event with GEO property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("geo")
@@ -2229,7 +2231,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(186)
     @DisplayName("186. Event with ATTACH property (URL)")
-    fun `event with ATTACH property`() {
+    fun `event with ATTACH property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("attach")
@@ -2258,7 +2260,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(187)
     @DisplayName("187. Full discovery and fetch workflow")
-    fun `full discovery and fetch workflow`() {
+    fun `full discovery and fetch workflow`() = runTest {
         println("\n=== Starting Full Discovery Workflow ===\n")
 
         val principalResult = discovery.discoverPrincipal(serverUrl)
@@ -2311,7 +2313,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(188)
     @DisplayName("188. ICloudQuirks works correctly")
-    fun `ICloudQuirks validates correctly`() {
+    fun `ICloudQuirks validates correctly`() = runTest {
         assertEquals("icloud", quirks.providerId)
         assertEquals("iCloud", quirks.displayName)
         assertEquals("https://caldav.icloud.com", quirks.baseUrl)
@@ -2325,7 +2327,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(189)
     @DisplayName("189. VALARM with AUDIO action")
-    fun `VALARM with AUDIO action`() {
+    fun `VALARM with AUDIO action`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("audio-alarm")
@@ -2357,7 +2359,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(190)
     @DisplayName("190. VALARM with absolute trigger time")
-    fun `VALARM with absolute trigger`() {
+    fun `VALARM with absolute trigger`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("abs-alarm")
@@ -2393,7 +2395,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(191)
     @DisplayName("191. Recurring event with BYMONTHDAY")
-    fun `recurring event with BYMONTHDAY`() {
+    fun `recurring event with BYMONTHDAY`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("bymonthday")
@@ -2422,7 +2424,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(192)
     @DisplayName("192. Recurring event with negative BYDAY (last Monday)")
-    fun `recurring event with negative BYDAY`() {
+    fun `recurring event with negative BYDAY`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("neg-byday")
@@ -2451,7 +2453,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(193)
     @DisplayName("193. Event with RDATE (additional occurrences)")
-    fun `event with RDATE`() {
+    fun `event with RDATE`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("rdate")
@@ -2482,7 +2484,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(194)
     @DisplayName("194. All-day recurring event")
-    fun `all-day recurring with monthly frequency`() {
+    fun `all-day recurring with monthly frequency`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("allday-monthly")
@@ -2512,7 +2514,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(200)
     @DisplayName("200. Exception bundling - master + exceptions in single VCALENDAR")
-    fun `exception bundling for CalDAV PUT`() {
+    fun `exception bundling for CalDAV PUT`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("exception-bundle")
@@ -2564,7 +2566,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(201)
     @DisplayName("201. VALARM duration format variations")
-    fun `VALARM with various duration formats`() {
+    fun `VALARM with various duration formats`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("alarm-formats")
@@ -2607,7 +2609,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(202)
     @DisplayName("202. All-day DTEND exclusive handling (RFC 5545)")
-    fun `all-day DTEND exclusive date handling`() {
+    fun `all-day DTEND exclusive date handling`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("allday-dtend")
@@ -2638,7 +2640,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(203)
     @DisplayName("203. EXDATE with multiple dates")
-    fun `EXDATE with comma-separated dates`() {
+    fun `EXDATE with comma-separated dates`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("comma-sep-exdate")
@@ -2672,7 +2674,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(204)
     @DisplayName("204. SEQUENCE increment on update")
-    fun `SEQUENCE property increments on update`() {
+    fun `SEQUENCE property increments on update`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("sequence")
@@ -2730,7 +2732,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(205)
     @DisplayName("205. Event with full VTIMEZONE component")
-    fun `event with full VTIMEZONE component`() {
+    fun `event with full VTIMEZONE component`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("full-tz")
@@ -2772,7 +2774,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(206)
     @DisplayName("206. Event with LOCATION containing special characters")
-    fun `location with address and special chars`() {
+    fun `location with address and special chars`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("location-special")
@@ -2804,7 +2806,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(210)
     @DisplayName("210. Floating time event (no timezone)")
-    fun `floating time event without timezone`() {
+    fun `floating time event without timezone`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("floating-time")
@@ -2832,7 +2834,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(211)
     @DisplayName("211. RRULE with WKST (week start day)")
-    fun `RRULE with WKST week start day`() {
+    fun `RRULE with WKST week start day`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("wkst-rule")
@@ -2860,7 +2862,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(212)
     @DisplayName("212. RRULE with BYSETPOS (nth occurrence)")
-    fun `RRULE with BYSETPOS for nth occurrence`() {
+    fun `RRULE with BYSETPOS for nth occurrence`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("bysetpos-rule")
@@ -2888,7 +2890,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(213)
     @DisplayName("213. Leap year handling (Feb 29)")
-    fun `leap year event on February 29`() {
+    fun `leap year event on February 29`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("leap-year")
@@ -2916,7 +2918,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(214)
     @DisplayName("214. Far future event (year 2099)")
-    fun `far future event year 2099`() {
+    fun `far future event year 2099`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("far-future")
@@ -2946,7 +2948,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(220)
     @DisplayName("220. Midnight-spanning event (11 PM to 1 AM)")
-    fun `event spanning midnight`() {
+    fun `event spanning midnight`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("midnight-span")
@@ -2974,7 +2976,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(221)
     @DisplayName("221. Year boundary event (Dec 31 to Jan 1)")
-    fun `event spanning year boundary`() {
+    fun `event spanning year boundary`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("year-boundary")
@@ -3002,7 +3004,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(222)
     @DisplayName("222. Very short event (1 minute)")
-    fun `very short 1 minute event`() {
+    fun `very short 1 minute event`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("short-event")
@@ -3031,7 +3033,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(223)
     @DisplayName("223. Past event (historical)")
-    fun `past event in history`() {
+    fun `past event in history`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("past-event")
@@ -3059,7 +3061,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(224)
     @DisplayName("224. Event with CREATED and LAST-MODIFIED timestamps")
-    fun `event with creation and modification timestamps`() {
+    fun `event with creation and modification timestamps`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("timestamps")
@@ -3092,7 +3094,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(225)
     @DisplayName("225. Multi-month all-day event")
-    fun `multi-month all-day event spanning 3 months`() {
+    fun `multi-month all-day event spanning 3 months`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("multi-month")
@@ -3122,7 +3124,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(230)
     @DisplayName("230. Time-range query expanding recurring event instances")
-    fun `time-range query expands recurring instances`() {
+    fun `time-range query expands recurring instances`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("recur-expand")
@@ -3168,7 +3170,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(231)
     @DisplayName("231. Event with both RRULE and RDATE")
-    fun `event with RRULE and RDATE combined`() {
+    fun `event with RRULE and RDATE combined`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("rrule-rdate")
@@ -3197,7 +3199,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(232)
     @DisplayName("232. Fetch ETags for large range")
-    fun `fetch etags for large date range`() {
+    fun `fetch etags for large date range`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val start = Instant.now().minus(365, ChronoUnit.DAYS)
@@ -3219,7 +3221,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(233)
     @DisplayName("233. Sync collection initial (empty token)")
-    fun `sync collection with empty token`() {
+    fun `sync collection with empty token`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val result = calDavClient.syncCollection(
@@ -3243,7 +3245,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(240)
     @DisplayName("240. Event with very long UID")
-    fun `event with very long UID accepted`() {
+    fun `event with very long UID accepted`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val longUid = generateUid("long-uid-" + "x".repeat(100))
@@ -3271,7 +3273,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(241)
     @DisplayName("241. Recurring event with both EXDATE and RDATE")
-    fun `recurring event with both EXDATE and RDATE`() {
+    fun `recurring event with both EXDATE and RDATE`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("exdate-rdate")
@@ -3301,7 +3303,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(242)
     @DisplayName("242. Event spanning multiple years")
-    fun `event spanning multiple years`() {
+    fun `event spanning multiple years`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("multi-year")
@@ -3329,7 +3331,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(243)
     @DisplayName("243. Delete event with wrong ETag fails")
-    fun `delete event with wrong ETag fails`() {
+    fun `delete event with wrong ETag fails`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("delete-etag")
@@ -3363,7 +3365,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(244)
     @DisplayName("244. Rapid event creation (batch)")
-    fun `rapid event creation batch`() {
+    fun `rapid event creation batch`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val baseUid = generateUid("batch")
@@ -3396,7 +3398,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(245)
     @DisplayName("245. Multiget with duplicate hrefs")
-    fun `multiget with duplicate hrefs handles gracefully`() {
+    fun `multiget with duplicate hrefs handles gracefully`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("dedup-test")
@@ -3445,7 +3447,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(250)
     @DisplayName("250. RRULE with INTERVAL=2 (bi-weekly)")
-    fun `RRULE with INTERVAL 2`() {
+    fun `RRULE with INTERVAL 2`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("interval-2")
@@ -3474,7 +3476,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(251)
     @DisplayName("251. RRULE with INTERVAL=3 (every 3 days)")
-    fun `RRULE with INTERVAL 3 daily`() {
+    fun `RRULE with INTERVAL 3 daily`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("interval-3")
@@ -3503,7 +3505,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(252)
     @DisplayName("252. RRULE with first Monday of month")
-    fun `RRULE with 1MO BYDAY`() {
+    fun `RRULE with 1MO BYDAY`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("first-monday")
@@ -3531,7 +3533,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(253)
     @DisplayName("253. RRULE with second Tuesday of month")
-    fun `RRULE with 2TU BYDAY`() {
+    fun `RRULE with 2TU BYDAY`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("second-tuesday")
@@ -3561,7 +3563,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(260)
     @DisplayName("260. Sync collection incremental")
-    fun `sync collection incremental after changes`() {
+    fun `sync collection incremental after changes`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         // Get initial sync token
@@ -3570,7 +3572,7 @@ class ICloudIntegrationTest {
             is DavResult.Success -> initialResult.value.newSyncToken
             else -> {
                 println("Initial sync failed: $initialResult")
-                return
+                return@runTest
             }
         }
 
@@ -3621,7 +3623,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(261)
     @DisplayName("261. Sync detects deleted event")
-    fun `sync collection detects deletion`() {
+    fun `sync collection detects deletion`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         // Create event
@@ -3672,7 +3674,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(270)
     @DisplayName("270. Event with all CLASS values")
-    fun `event with different CLASS values`() {
+    fun `event with different CLASS values`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val now = Instant.now()
@@ -3703,7 +3705,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(271)
     @DisplayName("271. Event with CONTACT property")
-    fun `event with CONTACT property`() {
+    fun `event with CONTACT property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("contact")
@@ -3732,7 +3734,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(272)
     @DisplayName("272. Event with COMMENT property")
-    fun `event with COMMENT property`() {
+    fun `event with COMMENT property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("comment")
@@ -3762,7 +3764,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(273)
     @DisplayName("273. Event with RESOURCES property")
-    fun `event with RESOURCES property`() {
+    fun `event with RESOURCES property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("resources")
@@ -3793,7 +3795,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(43)
     @DisplayName("43. RECURRENCE-ID with modified location")
-    fun `exception with modified location`() {
+    fun `exception with modified location`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("exc-loc")
@@ -3834,7 +3836,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(44)
     @DisplayName("44. Multiple RECURRENCE-ID exceptions")
-    fun `multiple exceptions in same series`() {
+    fun `multiple exceptions in same series`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("multi-exc")
@@ -3892,7 +3894,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(45)
     @DisplayName("45. THISANDFUTURE range exception")
-    fun `THISANDFUTURE range exception`() {
+    fun `THISANDFUTURE range exception`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("thisandfuture")
@@ -3931,7 +3933,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(46)
     @DisplayName("46. Exception with cancelled status")
-    fun `exception with STATUS CANCELLED`() {
+    fun `exception with STATUS CANCELLED`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("exc-cancel")
@@ -3973,7 +3975,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(104)
     @DisplayName("104. Get ctag from non-existent calendar")
-    fun `getCtag from invalid calendar fails`() {
+    fun `getCtag from invalid calendar fails`() = runTest {
         val fakeCalendarUrl = "https://caldav.icloud.com/fake-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.getCtag(fakeCalendarUrl)
@@ -3989,7 +3991,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(105)
     @DisplayName("105. Fetch etags from non-existent calendar")
-    fun `fetchEtagsInRange from invalid calendar fails`() {
+    fun `fetchEtagsInRange from invalid calendar fails`() = runTest {
         val fakeCalendarUrl = "https://caldav.icloud.com/fake-etag-calendar-${UUID.randomUUID()}/"
 
         val result = calDavClient.fetchEtagsInRange(
@@ -4008,7 +4010,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(106)
     @DisplayName("106. FetchEventsByHref with invalid hrefs")
-    fun `fetchEventsByHref with invalid hrefs handles gracefully`() {
+    fun `fetchEventsByHref with invalid hrefs handles gracefully`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val fakeHrefs = listOf(
@@ -4030,7 +4032,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(108)
     @DisplayName("108. Long summary is handled")
-    fun `event with very long summary`() {
+    fun `event with very long summary`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("long-summary")
@@ -4060,7 +4062,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(109)
     @DisplayName("109. Very long description")
-    fun `event with very long description`() {
+    fun `event with very long description`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("very-long-desc")
@@ -4095,7 +4097,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(110)
     @DisplayName("110. Concurrent modifications show ETag conflict")
-    fun `concurrent updates show conflict detection`() {
+    fun `concurrent updates show conflict detection`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("concurrent")
@@ -4172,7 +4174,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(111)
     @DisplayName("111. Minimal event via typed API")
-    fun `createEvent with minimal ICalEvent`() {
+    fun `createEvent with minimal ICalEvent`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("minimal")
@@ -4225,7 +4227,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(207)
     @DisplayName("207. EXDATE with comma-separated dates")
-    fun `EXDATE with multiple comma-separated dates`() {
+    fun `EXDATE with multiple comma-separated dates`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("comma-exdate")
@@ -4260,7 +4262,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(216)
     @DisplayName("216. Yearly recurring on leap day")
-    fun `yearly recurring event on leap day`() {
+    fun `yearly recurring event on leap day`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("leap-yearly")
@@ -4288,7 +4290,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(219)
     @DisplayName("219. Negative BYSETPOS (last weekday)")
-    fun `RRULE with negative BYSETPOS for last weekday`() {
+    fun `RRULE with negative BYSETPOS for last weekday`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("bysetpos-neg")
@@ -4318,7 +4320,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(250)
     @DisplayName("250. RRULE with BYMONTH")
-    fun `RRULE with BYMONTH for seasonal events`() {
+    fun `RRULE with BYMONTH for seasonal events`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("bymonth")
@@ -4346,7 +4348,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(251)
     @DisplayName("251. RRULE with BYHOUR")
-    fun `RRULE with BYHOUR`() {
+    fun `RRULE with BYHOUR`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("byhour")
@@ -4374,7 +4376,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(252)
     @DisplayName("252. DST transition event")
-    fun `event at DST spring forward time`() {
+    fun `event at DST spring forward time`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("dst-spring")
@@ -4416,7 +4418,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(253)
     @DisplayName("253. Daylight saving fall back event")
-    fun `event at DST fall back time`() {
+    fun `event at DST fall back time`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("dst-fall")
@@ -4458,7 +4460,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(268)
     @DisplayName("268. Summary with line folding")
-    fun `summary requiring RFC line folding`() {
+    fun `summary requiring RFC line folding`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("line-fold")
@@ -4488,7 +4490,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(269)
     @DisplayName("269. RRULE with COUNT and UNTIL conflict")
-    fun `RRULE with COUNT only`() {
+    fun `RRULE with COUNT only`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("count-only")
@@ -4516,7 +4518,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(274)
     @DisplayName("274. Event with PARTSTAT for ATTENDEE")
-    fun `event with ATTENDEE PARTSTAT values`() {
+    fun `event with ATTENDEE PARTSTAT values`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("partstat")
@@ -4549,7 +4551,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(275)
     @DisplayName("275. Event with ROLE for ATTENDEE")
-    fun `event with ATTENDEE ROLE values`() {
+    fun `event with ATTENDEE ROLE values`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("role")
@@ -4582,7 +4584,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(276)
     @DisplayName("276. Event with CUTYPE for ATTENDEE")
-    fun `event with ATTENDEE CUTYPE values`() {
+    fun `event with ATTENDEE CUTYPE values`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("cutype")
@@ -4615,7 +4617,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(277)
     @DisplayName("277. Event with CN for ATTENDEE")
-    fun `event with ATTENDEE CN parameter`() {
+    fun `event with ATTENDEE CN parameter`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("cn")
@@ -4646,7 +4648,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(278)
     @DisplayName("278. Event with REQUEST-STATUS")
-    fun `event with REQUEST-STATUS property`() {
+    fun `event with REQUEST-STATUS property`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("reqstatus")
@@ -4675,7 +4677,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(279)
     @DisplayName("279. Event with multiple VALARM with REPEAT")
-    fun `VALARM with REPEAT and DURATION`() {
+    fun `VALARM with REPEAT and DURATION`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val uid = generateUid("alarm-repeat")
@@ -4712,7 +4714,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(280)
     @DisplayName("280. Large multiget (20 hrefs)")
-    fun `large multiget request`() {
+    fun `large multiget request`() = runTest {
         Assumptions.assumeTrue(defaultCalendarUrl != null, "Default calendar URL required")
 
         val baseUid = generateUid("multiget")
@@ -4758,7 +4760,7 @@ class ICloudIntegrationTest {
     @Test
     @Order(999)
     @DisplayName("999. Test summary - all event types created successfully")
-    fun `test summary`() {
+    fun `test summary`() = runTest {
         println("\n=== iCloud Integration Test Summary ===")
         println("Total events created and tracked: ${createdEventUrls.size}")
         println("Test run ID: $testRunId")

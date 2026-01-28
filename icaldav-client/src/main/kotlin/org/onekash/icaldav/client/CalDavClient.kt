@@ -9,8 +9,6 @@ import org.onekash.icaldav.client.DavAuth
 import org.onekash.icaldav.client.PutResponse
 import org.onekash.icaldav.client.WebDavClient
 import org.onekash.icaldav.model.*
-import org.onekash.icaldav.quirks.CalDavQuirks
-import org.onekash.icaldav.quirks.DefaultQuirks
 import org.onekash.icaldav.xml.RequestBuilder
 import java.time.Instant
 import java.time.ZoneOffset
@@ -26,13 +24,11 @@ import java.util.concurrent.ConcurrentHashMap
  * Uses raw HTTP approach for reliable iCloud compatibility.
  *
  * @param webDavClient WebDAV client for HTTP operations
- * @param quirks Provider-specific quirks for handling server differences
  * @param iCalParser Parser for iCalendar data
  * @param iCalGenerator Generator for iCalendar data
  */
 class CalDavClient(
     private val webDavClient: WebDavClient,
-    private val quirks: CalDavQuirks = DefaultQuirks("generic", "CalDAV", ""),
     private val iCalParser: ICalParser = ICalParser(),
     private val iCalGenerator: ICalGenerator = ICalGenerator()
 ) {
@@ -55,7 +51,7 @@ class CalDavClient(
      *
      * @see ServerCapabilities
      */
-    fun getCapabilities(serverUrl: String, forceRefresh: Boolean = false): DavResult<ServerCapabilities> {
+    suspend fun getCapabilities(serverUrl: String, forceRefresh: Boolean = false): DavResult<ServerCapabilities> {
         val cached = capabilitiesCache[serverUrl]
         val now = System.currentTimeMillis()
 
@@ -121,7 +117,7 @@ class CalDavClient(
      * @param serverUrl Server URL for capability check (defaults to calendar URL root)
      * @return Sync result, or null if sync-collection not supported
      */
-    fun syncCollectionIfSupported(
+    suspend fun syncCollectionIfSupported(
         calendarUrl: String,
         syncToken: String = "",
         serverUrl: String = extractServerRoot(calendarUrl)
@@ -147,7 +143,7 @@ class CalDavClient(
      * @param serverUrl Base CalDAV URL
      * @return Discovered account with calendars
      */
-    fun discoverAccount(serverUrl: String): DavResult<CalDavAccount> {
+    suspend fun discoverAccount(serverUrl: String): DavResult<CalDavAccount> {
         return discovery.discoverAccount(serverUrl)
     }
 
@@ -159,7 +155,7 @@ class CalDavClient(
      * @param end End of time range
      * @return List of parsed events
      */
-    fun fetchEvents(
+    suspend fun fetchEvents(
         calendarUrl: String,
         start: Instant? = null,
         end: Instant? = null
@@ -187,7 +183,7 @@ class CalDavClient(
      * @param eventHrefs List of event URLs to fetch
      * @return List of parsed events
      */
-    fun fetchEventsByHref(
+    suspend fun fetchEventsByHref(
         calendarUrl: String,
         eventHrefs: List<String>
     ): DavResult<List<EventWithMetadata>> {
@@ -213,7 +209,7 @@ class CalDavClient(
      * @param calendarUrl Calendar collection URL
      * @return Current ctag value
      */
-    fun getCtag(calendarUrl: String): DavResult<String?> {
+    suspend fun getCtag(calendarUrl: String): DavResult<String?> {
         val result = webDavClient.propfind(
             url = calendarUrl,
             body = RequestBuilder.propfindCtag(),
@@ -231,7 +227,7 @@ class CalDavClient(
      * @param calendarUrl Calendar collection URL
      * @return Current sync-token value, or null if not supported
      */
-    fun getSyncToken(calendarUrl: String): DavResult<String?> {
+    suspend fun getSyncToken(calendarUrl: String): DavResult<String?> {
         val result = webDavClient.propfind(
             url = calendarUrl,
             body = RequestBuilder.propfindCtag(), // Also requests sync-token
@@ -258,7 +254,7 @@ class CalDavClient(
      * @param end End of time range
      * @return List of href/etag pairs for events in range
      */
-    fun fetchEtagsInRange(
+    suspend fun fetchEtagsInRange(
         calendarUrl: String,
         start: Instant,
         end: Instant
@@ -288,7 +284,7 @@ class CalDavClient(
      * @param event Event to create
      * @return Created event URL and ETag
      */
-    fun createEvent(
+    suspend fun createEvent(
         calendarUrl: String,
         event: ICalEvent
     ): DavResult<EventCreateResult> {
@@ -311,7 +307,7 @@ class CalDavClient(
      * @param etag Current ETag for conflict detection
      * @return New ETag after update
      */
-    fun updateEvent(
+    suspend fun updateEvent(
         eventUrl: String,
         event: ICalEvent,
         etag: String? = null
@@ -331,7 +327,7 @@ class CalDavClient(
      * @param etag Current ETag for conflict detection
      * @return Success or error
      */
-    fun deleteEvent(
+    suspend fun deleteEvent(
         eventUrl: String,
         etag: String? = null
     ): DavResult<Unit> {
@@ -344,7 +340,7 @@ class CalDavClient(
      * @param eventUrl Full URL to the event resource
      * @return Success with event, or HttpError(404) if not found
      */
-    fun getEvent(eventUrl: String): DavResult<EventWithMetadata> {
+    suspend fun getEvent(eventUrl: String): DavResult<EventWithMetadata> {
         val calendarUrl = eventUrl.substringBeforeLast('/')
         return when (val result = fetchEventsByHref(calendarUrl, listOf(eventUrl))) {
             is DavResult.Success -> {
@@ -372,7 +368,7 @@ class CalDavClient(
      * @param icalData Raw iCalendar data
      * @return Created event URL and ETag, or 412 error if event exists
      */
-    fun createEventRaw(calendarUrl: String, uid: String, icalData: String): DavResult<EventCreateResult> {
+    suspend fun createEventRaw(calendarUrl: String, uid: String, icalData: String): DavResult<EventCreateResult> {
         val eventUrl = buildEventUrl(calendarUrl, uid)
         return webDavClient.put(eventUrl, icalData, etag = null, ifNoneMatch = true)
             .map { EventCreateResult(eventUrl, it.etag) }
@@ -389,7 +385,7 @@ class CalDavClient(
      * @param etag Current ETag for conflict detection (optional)
      * @return New ETag after update, or 412 error if etag mismatch
      */
-    fun updateEventRaw(eventUrl: String, icalData: String, etag: String? = null): DavResult<String?> {
+    suspend fun updateEventRaw(eventUrl: String, icalData: String, etag: String? = null): DavResult<String?> {
         return webDavClient.put(eventUrl, icalData, etag, ifNoneMatch = false).map { it.etag }
     }
 
@@ -400,7 +396,7 @@ class CalDavClient(
      * @param syncToken Previous sync token (empty for full sync)
      * @return Sync result with changes
      */
-    fun syncCollection(
+    suspend fun syncCollection(
         calendarUrl: String,
         syncToken: String = ""
     ): DavResult<SyncResult> {
@@ -518,7 +514,7 @@ class CalDavClient(
      * @param end End of time range
      * @return List of parsed todos
      */
-    fun fetchTodos(
+    suspend fun fetchTodos(
         calendarUrl: String,
         start: Instant? = null,
         end: Instant? = null
@@ -546,7 +542,7 @@ class CalDavClient(
      * @param todo Todo to create
      * @return Created todo URL and ETag
      */
-    fun createTodo(
+    suspend fun createTodo(
         calendarUrl: String,
         todo: ICalTodo
     ): DavResult<TodoCreateResult> {
@@ -568,7 +564,7 @@ class CalDavClient(
      * @param etag Current ETag for conflict detection
      * @return New ETag after update
      */
-    fun updateTodo(
+    suspend fun updateTodo(
         todoUrl: String,
         todo: ICalTodo,
         etag: String? = null
@@ -588,7 +584,7 @@ class CalDavClient(
      * @param etag Current ETag for conflict detection
      * @return Success or error
      */
-    fun deleteTodo(
+    suspend fun deleteTodo(
         todoUrl: String,
         etag: String? = null
     ): DavResult<Unit> {
@@ -601,7 +597,7 @@ class CalDavClient(
      * @param todoUrl Full URL to the todo resource
      * @return Success with todo, or HttpError(404) if not found
      */
-    fun getTodo(todoUrl: String): DavResult<TodoWithMetadata> {
+    suspend fun getTodo(todoUrl: String): DavResult<TodoWithMetadata> {
         val calendarUrl = todoUrl.substringBeforeLast('/')
         val hrefs = listOf(todoUrl)
         val reportBody = RequestBuilder.calendarMultiget(hrefs)
@@ -660,7 +656,7 @@ class CalDavClient(
      * @param end End of time range
      * @return List of parsed journals
      */
-    fun fetchJournals(
+    suspend fun fetchJournals(
         calendarUrl: String,
         start: Instant? = null,
         end: Instant? = null
@@ -688,7 +684,7 @@ class CalDavClient(
      * @param journal Journal to create
      * @return Created journal URL and ETag
      */
-    fun createJournal(
+    suspend fun createJournal(
         calendarUrl: String,
         journal: ICalJournal
     ): DavResult<JournalCreateResult> {
@@ -710,7 +706,7 @@ class CalDavClient(
      * @param etag Current ETag for conflict detection
      * @return New ETag after update
      */
-    fun updateJournal(
+    suspend fun updateJournal(
         journalUrl: String,
         journal: ICalJournal,
         etag: String? = null
@@ -730,7 +726,7 @@ class CalDavClient(
      * @param etag Current ETag for conflict detection
      * @return Success or error
      */
-    fun deleteJournal(
+    suspend fun deleteJournal(
         journalUrl: String,
         etag: String? = null
     ): DavResult<Unit> {
@@ -743,7 +739,7 @@ class CalDavClient(
      * @param journalUrl Full URL to the journal resource
      * @return Success with journal, or HttpError(404) if not found
      */
-    fun getJournal(journalUrl: String): DavResult<JournalWithMetadata> {
+    suspend fun getJournal(journalUrl: String): DavResult<JournalWithMetadata> {
         val calendarUrl = journalUrl.substringBeforeLast('/')
         val hrefs = listOf(journalUrl)
         val reportBody = RequestBuilder.calendarMultiget(hrefs)
@@ -800,7 +796,7 @@ class CalDavClient(
      * @param resourceUrl URL of the resource to get ACL for
      * @return ACL with list of ACEs
      */
-    fun getAcl(resourceUrl: String): DavResult<Acl> {
+    suspend fun getAcl(resourceUrl: String): DavResult<Acl> {
         val result = webDavClient.propfind(
             url = resourceUrl,
             body = RequestBuilder.propfindAcl(),
@@ -828,7 +824,7 @@ class CalDavClient(
      * @param acl ACL to set
      * @return Success or error
      */
-    fun setAcl(resourceUrl: String, acl: Acl): DavResult<Unit> {
+    suspend fun setAcl(resourceUrl: String, acl: Acl): DavResult<Unit> {
         val body = RequestBuilder.acl(acl.aces)
         return webDavClient.acl(resourceUrl, body)
     }
@@ -842,7 +838,7 @@ class CalDavClient(
      * @param resourceUrl URL of the resource
      * @return CurrentUserPrivilegeSet with the user's privileges
      */
-    fun getCurrentUserPrivileges(resourceUrl: String): DavResult<CurrentUserPrivilegeSet> {
+    suspend fun getCurrentUserPrivileges(resourceUrl: String): DavResult<CurrentUserPrivilegeSet> {
         val result = webDavClient.propfind(
             url = resourceUrl,
             body = RequestBuilder.propfindCurrentUserPrivilegeSet(),
@@ -874,7 +870,7 @@ class CalDavClient(
      * @param canWrite If true, grants write access; if false, grants read-only access
      * @return Success or error
      */
-    fun shareCalendar(
+    suspend fun shareCalendar(
         calendarUrl: String,
         userPrincipal: String,
         canWrite: Boolean = false
@@ -906,7 +902,7 @@ class CalDavClient(
      * @param principalUrl User's principal URL
      * @return SchedulingUrls with inbox and outbox URLs
      */
-    fun discoverSchedulingUrls(principalUrl: String): DavResult<SchedulingUrls> {
+    suspend fun discoverSchedulingUrls(principalUrl: String): DavResult<SchedulingUrls> {
         val result = webDavClient.propfind(
             url = principalUrl,
             body = RequestBuilder.propfindSchedulingUrls(),
@@ -936,7 +932,7 @@ class CalDavClient(
      * @param serverUrl Server URL for capability check
      * @return true if server supports calendar-auto-schedule
      */
-    fun checkSchedulingSupport(serverUrl: String): Boolean {
+    suspend fun checkSchedulingSupport(serverUrl: String): Boolean {
         val caps = getCapabilities(serverUrl).getOrNull()
         return caps?.supportsAutoSchedule == true
     }
@@ -953,7 +949,7 @@ class CalDavClient(
      * @param recipients List of attendee email addresses
      * @return SchedulingResult with per-recipient status
      */
-    fun sendSchedulingMessage(
+    suspend fun sendSchedulingMessage(
         outboxUrl: String,
         itipMessage: String,
         recipients: List<String>
@@ -975,7 +971,7 @@ class CalDavClient(
      * @param dtend End of time range
      * @return Map of attendee email to their free/busy information
      */
-    fun queryFreeBusy(
+    suspend fun queryFreeBusy(
         outboxUrl: String,
         organizer: Organizer,
         attendees: List<Attendee>,
@@ -1021,41 +1017,44 @@ class CalDavClient(
          * Uses WebDavClient.withAuth() which handles redirects properly,
          * preserving authentication headers across cross-host redirects
          * (critical for iCloud which redirects to partition servers).
+         *
+         * @param username Username for authentication
+         * @param password Password for authentication
+         * @param userAgent User-Agent header to identify your application
          */
         fun withBasicAuth(
             username: String,
-            password: String
+            password: String,
+            userAgent: String = "iCalDAV/1.0 (Kotlin)"
         ): CalDavClient {
             val auth = DavAuth.Basic(username, password)
-            val httpClient = WebDavClient.withAuth(auth)
+            val httpClient = WebDavClient.withAuth(auth, userAgent)
             val webDavClient = WebDavClient(httpClient, auth)
             return CalDavClient(webDavClient)
         }
 
         /**
-         * Create CalDavClient for a specific provider with auto-detected quirks.
-         *
-         * Automatically detects the CalDAV provider from the URL and applies
-         * appropriate quirks (e.g., ICloudQuirks for iCloud URLs).
+         * Create CalDavClient for a specific provider.
          *
          * This is the recommended way to create a CalDavClient when you know
          * the server URL ahead of time.
          *
-         * @param serverUrl Base CalDAV server URL (used for provider detection)
+         * @param serverUrl Base CalDAV server URL
          * @param username Username for authentication
          * @param password Password for authentication
-         * @return CalDavClient configured for the detected provider
+         * @param userAgent User-Agent header to identify your application
+         * @return CalDavClient configured for the server
          */
         fun forProvider(
             serverUrl: String,
             username: String,
-            password: String
+            password: String,
+            userAgent: String = "iCalDAV/1.0 (Kotlin)"
         ): CalDavClient {
-            val quirks = CalDavQuirks.forServer(serverUrl)
             val auth = DavAuth.Basic(username, password)
-            val httpClient = WebDavClient.withAuth(auth)
+            val httpClient = WebDavClient.withAuth(auth, userAgent)
             val webDavClient = WebDavClient(httpClient, auth)
-            return CalDavClient(webDavClient, quirks)
+            return CalDavClient(webDavClient)
         }
     }
 }

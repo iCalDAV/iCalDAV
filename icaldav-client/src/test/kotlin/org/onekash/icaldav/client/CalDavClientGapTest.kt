@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.DisplayName
+import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertIs
@@ -55,7 +56,7 @@ class CalDavClientGapTest {
     inner class SyncCollectionErrorTests {
 
         @Test
-        fun `syncCollection returns HttpError on 403 expired token`() {
+        fun `syncCollection returns HttpError on 403 expired token`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(403)
@@ -69,7 +70,7 @@ class CalDavClientGapTest {
         }
 
         @Test
-        fun `syncCollection returns HttpError on 410 invalid token`() {
+        fun `syncCollection returns HttpError on 410 invalid token`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(410)
@@ -83,7 +84,7 @@ class CalDavClientGapTest {
         }
 
         @Test
-        fun `syncCollection handles empty sync token for initial sync`() {
+        fun `syncCollection handles empty sync token for initial sync`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -103,7 +104,7 @@ class CalDavClientGapTest {
         }
 
         @Test
-        fun `syncCollection handles deleted events`() {
+        fun `syncCollection handles deleted events`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -130,7 +131,7 @@ class CalDavClientGapTest {
         }
 
         @Test
-        fun `syncCollection handles hrefs without calendar-data (iCloud style)`() {
+        fun `syncCollection handles hrefs without calendar-data (iCloud style)`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -167,7 +168,7 @@ class CalDavClientGapTest {
     inner class GetCtagTests {
 
         @Test
-        fun `getCtag returns null when ctag not present`() {
+        fun `getCtag returns null when ctag not present`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -194,7 +195,7 @@ class CalDavClientGapTest {
         }
 
         @Test
-        fun `getCtag returns ctag when present`() {
+        fun `getCtag returns ctag when present`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/">
@@ -223,7 +224,7 @@ class CalDavClientGapTest {
         }
 
         @Test
-        fun `getCtag handles 401 unauthorized`() {
+        fun `getCtag handles 401 unauthorized`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(401)
@@ -242,7 +243,7 @@ class CalDavClientGapTest {
     inner class FetchEventsByHrefEdgeCases {
 
         @Test
-        fun `fetchEventsByHref with empty list returns empty success`() {
+        fun `fetchEventsByHref with empty list returns empty success`() = runTest {
             val result = calDavClient.fetchEventsByHref(serverUrl("/cal/"), emptyList())
 
             assertIs<DavResult.Success<*>>(result)
@@ -250,7 +251,7 @@ class CalDavClientGapTest {
         }
 
         @Test
-        fun `fetchEventsByHref handles partial success (some events missing)`() {
+        fun `fetchEventsByHref handles partial success (some events missing)`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -296,7 +297,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `fetchEventsByHref handles server error`() {
+        fun `fetchEventsByHref handles server error`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(500)
@@ -318,7 +319,7 @@ END:VCALENDAR</C:calendar-data>
     inner class EventCrudConflictTests {
 
         @Test
-        fun `updateEvent returns 412 on etag mismatch`() {
+        fun `updateEvent returns 412 on etag mismatch`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(412)
@@ -337,7 +338,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `deleteEvent returns 412 on etag mismatch`() {
+        fun `deleteEvent returns 412 on etag mismatch`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(412)
@@ -354,7 +355,7 @@ END:VCALENDAR</C:calendar-data>
         }
 
         @Test
-        fun `createEventRaw returns 412 when event already exists`() {
+        fun `createEventRaw returns 412 when event already exists`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(412)
@@ -388,7 +389,7 @@ END:VCALENDAR</C:calendar-data>
     inner class NetworkErrorTests {
 
         @Test
-        fun `fetchEvents handles connection timeout`() {
+        fun `fetchEvents handles connection timeout`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setSocketPolicy(SocketPolicy.NO_RESPONSE)

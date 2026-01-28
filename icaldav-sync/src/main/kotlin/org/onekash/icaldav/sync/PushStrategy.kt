@@ -146,7 +146,7 @@ class PushStrategy(
     /**
      * Process a single operation.
      */
-    private fun processOperation(op: PendingOperation): SinglePushResult {
+    private suspend fun processOperation(op: PendingOperation): SinglePushResult {
         return when (op.operation) {
             OperationType.CREATE -> pushCreate(op)
             OperationType.UPDATE -> pushUpdate(op)
@@ -159,7 +159,7 @@ class PushStrategy(
      *
      * Uses If-None-Match: * to fail if event already exists (conflict detection).
      */
-    private fun pushCreate(op: PendingOperation): SinglePushResult {
+    private suspend fun pushCreate(op: PendingOperation): SinglePushResult {
         val result = client.createEventRaw(op.calendarUrl, op.eventUid, op.icalData)
 
         return when (result) {
@@ -179,7 +179,7 @@ class PushStrategy(
      *
      * Uses If-Match with ETag for conflict detection.
      */
-    private fun pushUpdate(op: PendingOperation): SinglePushResult {
+    private suspend fun pushUpdate(op: PendingOperation): SinglePushResult {
         val url = op.eventUrl ?: return SinglePushResult.Error("No URL for update", false)
 
         val result = client.updateEventRaw(url, op.icalData, op.etag)
@@ -201,7 +201,7 @@ class PushStrategy(
      * Uses If-Match with ETag for conflict detection.
      * Treats 404 as success (already deleted).
      */
-    private fun pushDelete(op: PendingOperation): SinglePushResult {
+    private suspend fun pushDelete(op: PendingOperation): SinglePushResult {
         val url = op.eventUrl ?: return SinglePushResult.Error("No URL for delete", false)
 
         val result = client.deleteEvent(url, op.etag)

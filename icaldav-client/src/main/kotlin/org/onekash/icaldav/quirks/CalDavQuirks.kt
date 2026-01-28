@@ -12,7 +12,13 @@ package org.onekash.icaldav.quirks
  * - [DefaultQuirks] - Generic CalDAV servers
  *
  * Based on battle-tested patterns from KashCal.
+ *
+ * @see CalDavProvider for the recommended replacement
  */
+@Deprecated(
+    message = "Use CalDavProvider instead for cleaner API and configurable options",
+    replaceWith = ReplaceWith("CalDavProvider", "org.onekash.icaldav.quirks.CalDavProvider")
+)
 interface CalDavQuirks {
 
     /** Provider identifier (e.g., "icloud", "google", "fastmail") */

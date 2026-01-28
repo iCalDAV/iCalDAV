@@ -14,6 +14,12 @@ android {
         minSdk = 21
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+
+        // Exclude CalendarProviderIntegrationTest in CI (requires CalDAV credentials)
+        // Run with: -PexcludeIntegrationTests=true to exclude
+        if (project.hasProperty("excludeIntegrationTests")) {
+            testInstrumentationRunnerArguments["notClass"] = "org.onekash.icaldav.android.CalendarProviderIntegrationTest"
+        }
     }
 
     buildTypes {
@@ -71,6 +77,9 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.5.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("com.google.truth:truth:1.1.5")
+    // Coroutines for async tests - include both core and android
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // icaldav-client for integration tests against real CalDAV servers
     androidTestImplementation(project(":icaldav-client"))

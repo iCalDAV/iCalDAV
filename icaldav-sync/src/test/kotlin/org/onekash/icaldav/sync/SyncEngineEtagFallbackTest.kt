@@ -15,6 +15,7 @@ import org.mockito.kotlin.*
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
+import kotlinx.coroutines.test.runTest
 import java.time.Instant
 
 /**
@@ -54,7 +55,7 @@ class SyncEngineEtagFallbackTest {
     inner class SyncTokenExpiryTests {
 
         @Test
-        fun `B2-1 handles 403 sync token expired`() {
+        fun `B2-1 handles 403 sync token expired`() = runTest {
             // Setup: Previous successful sync with sync token
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
@@ -101,7 +102,7 @@ class SyncEngineEtagFallbackTest {
         }
 
         @Test
-        fun `B2-2 handles 410 sync token invalid`() {
+        fun `B2-2 handles 410 sync token invalid`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "old-ctag",
@@ -138,7 +139,7 @@ class SyncEngineEtagFallbackTest {
     inner class IncrementalSyncTests {
 
         @Test
-        fun `B3-1 incremental sync with added events`() {
+        fun `B3-1 incremental sync with added events`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "old-ctag",
@@ -179,7 +180,7 @@ class SyncEngineEtagFallbackTest {
         }
 
         @Test
-        fun `B3-2 incremental sync with deleted events`() {
+        fun `B3-2 incremental sync with deleted events`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "old-ctag",
@@ -221,7 +222,7 @@ class SyncEngineEtagFallbackTest {
         }
 
         @Test
-        fun `B3-3 incremental sync fetches hrefs without calendar-data (iCloud)`() {
+        fun `B3-3 incremental sync fetches hrefs without calendar-data (iCloud)`() = runTest {
             // iCloud returns hrefs in sync-collection but not the actual calendar data
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
@@ -281,7 +282,7 @@ class SyncEngineEtagFallbackTest {
     inner class ForceFullSyncTests {
 
         @Test
-        fun `B4-1 forceFullSync bypasses incremental`() {
+        fun `B4-1 forceFullSync bypasses incremental`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "old-ctag",
@@ -332,7 +333,7 @@ class SyncEngineEtagFallbackTest {
     inner class EmptySyncTokenTests {
 
         @Test
-        fun `B5-1 empty sync token triggers full sync`() {
+        fun `B5-1 empty sync token triggers full sync`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "ctag",
@@ -372,7 +373,7 @@ class SyncEngineEtagFallbackTest {
         }
 
         @Test
-        fun `B5-2 null sync token triggers full sync`() {
+        fun `B5-2 null sync token triggers full sync`() = runTest {
             val previousState = SyncState(
                 calendarUrl = calendarUrl,
                 ctag = "ctag",

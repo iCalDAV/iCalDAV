@@ -10,7 +10,7 @@ plugins {
 
 allprojects {
     group = "org.onekash"
-    version = findProperty("VERSION_NAME") as String? ?: "2.7.0"
+    version = findProperty("VERSION_NAME") as String? ?: "3.0.0"
 }
 
 subprojects {

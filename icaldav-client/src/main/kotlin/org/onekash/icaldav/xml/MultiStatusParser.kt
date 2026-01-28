@@ -1,14 +1,20 @@
 package org.onekash.icaldav.xml
 
 import org.onekash.icaldav.model.*
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
+import java.io.StringReader
 
 /**
  * Parser for WebDAV/CalDAV multistatus XML responses.
  *
- * Uses regex-based parsing for simplicity and reliability with namespace
- * variations (D:, d:, DAV:, etc.) that different servers use.
+ * Uses XmlPullParser for efficient streaming parsing with:
+ * - Automatic XML entity decoding (&amp; → &, &lt; → <, etc.)
+ * - Proper namespace handling (d:, D:, c:, cs:, unprefixed)
+ * - Per-propstat status tracking
+ * - CDATA section support
  *
- * Production-tested with iCloud namespace handling variations.
+ * Production-tested with iCloud, Nextcloud, Baikal, and Radicale servers.
  */
 class MultiStatusParser {
 
@@ -20,373 +26,324 @@ class MultiStatusParser {
      */
     fun parse(xml: String): DavResult<MultiStatus> {
         return try {
-            val responses = parseResponses(xml)
-            val syncToken = extractSyncToken(xml)
-            DavResult.success(MultiStatus(responses, syncToken))
+            val result = parseXml(xml)
+            DavResult.success(MultiStatus(result.responses, result.syncToken))
         } catch (e: Exception) {
             DavResult.parseError("Failed to parse multistatus: ${e.message}", xml)
         }
     }
 
-    /**
-     * Parse all <response> elements from multistatus.
-     */
-    private fun parseResponses(xml: String): List<DavResponse> {
-        // Match <response> or <D:response> or <d:response> elements
-        val responsePattern = Regex(
-            """<(?:[a-zA-Z]+:)?response[^>]*>(.*?)</(?:[a-zA-Z]+:)?response>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        return responsePattern.findAll(xml).mapNotNull { match ->
-            parseResponse(match.groupValues[1])
-        }.toList()
-    }
+    private data class ParseResult(
+        val responses: List<DavResponse>,
+        val syncToken: String?
+    )
 
     /**
-     * Parse a single <response> element.
+     * Parse XML using XmlPullParser.
      */
-    private fun parseResponse(responseXml: String): DavResponse? {
-        val href = extractHref(responseXml) ?: return null
-        val status = extractStatus(responseXml)
-        val properties = extractProperties(responseXml)
-        val etag = extractEtag(responseXml)
-        val calendarData = extractCalendarData(responseXml)
+    private fun parseXml(xml: String): ParseResult {
+        // Strip XML declaration and DOCTYPE if present
+        // - kxml2 doesn't handle XML declarations well
+        // - DOCTYPE stripping is a security measure against XXE attacks
+        val cleanXml = stripXmlProlog(xml)
 
-        return DavResponse(
-            href = href,
-            status = status,
-            properties = properties,
-            etag = etag,
-            calendarData = calendarData
-        )
-    }
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = true
+        val parser = factory.newPullParser()
+        parser.setInput(StringReader(cleanXml))
 
-    /**
-     * Extract href from response element.
-     */
-    private fun extractHref(xml: String): String? {
-        // <href>/path/to/resource</href> or <D:href>...</D:href>
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?href[^>]*>(.*?)</(?:[a-zA-Z]+:)?href>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-        return pattern.find(xml)?.groupValues?.get(1)?.trim()?.let { decodeHref(it) }
-    }
+        val responses = mutableListOf<DavResponse>()
+        var rootSyncToken: String? = null
 
-    /**
-     * Extract HTTP status code from propstat or response.
-     */
-    private fun extractStatus(xml: String): Int {
-        // <status>HTTP/1.1 200 OK</status>
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?status[^>]*>HTTP/\d+\.\d+\s+(\d+)""",
-            RegexOption.IGNORE_CASE
-        )
-        return pattern.find(xml)?.groupValues?.get(1)?.toIntOrNull() ?: 200
-    }
+        // Response-level state
+        var currentResponse: ResponseBuilder? = null
 
-    /**
-     * Extract all properties from response, preserving per-property status.
-     *
-     * WebDAV servers return properties in propstat elements, where each propstat
-     * has its own status. A single response may have multiple propstat elements
-     * (e.g., one with 200 OK for found properties, one with 404 for not found).
-     *
-     * XML structure:
-     * ```xml
-     * <response>
-     *   <propstat>
-     *     <prop><displayname>Name</displayname></prop>
-     *     <status>HTTP/1.1 200 OK</status>
-     *   </propstat>
-     *   <propstat>
-     *     <prop><calendar-color/></prop>
-     *     <status>HTTP/1.1 404 Not Found</status>
-     *   </propstat>
-     * </response>
-     * ```
-     */
-    private fun extractProperties(xml: String): DavProperties {
-        val props = mutableMapOf<String, String?>()
-        val propStatus = mutableMapOf<String, PropertyStatus>()
+        // Propstat-level state
+        var currentPropstat: PropstatBuilder? = null
 
-        // Find all propstat blocks (non-greedy)
-        val propstatPattern = Regex(
-            """<(?:[a-zA-Z]+:)?propstat[^>]*>(.*?)</(?:[a-zA-Z]+:)?propstat>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
+        // Nested element tracking
+        var inCurrentUserPrincipal = false
+        var inCalendarHomeSet = false
+        var inResourceType = false
+        var resourceTypeContent = StringBuilder()
 
-        val propstatMatches = propstatPattern.findAll(xml).toList()
+        // Track depth for response elements to handle nested responses correctly
+        var responseDepth = 0
 
-        // If no propstat elements found, fall back to direct prop extraction
-        if (propstatMatches.isEmpty()) {
-            return extractPropertiesLegacy(xml)
-        }
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            when (eventType) {
+                XmlPullParser.START_TAG -> {
+                    val localName = parser.name.lowercase()
 
-        for (propstatMatch in propstatMatches) {
-            val propstatXml = propstatMatch.groupValues[1]
+                    when (localName) {
+                        "response" -> {
+                            responseDepth++
+                            if (responseDepth == 1) {
+                                currentResponse = ResponseBuilder()
+                            }
+                        }
+                        "propstat" -> {
+                            if (currentResponse != null) {
+                                currentPropstat = PropstatBuilder()
+                            }
+                        }
+                        "prop" -> {
+                            // Just marks entering prop block, properties extracted inside
+                        }
+                        "href" -> {
+                            val text = parser.nextText().trim()
+                            when {
+                                inCalendarHomeSet && currentPropstat != null -> {
+                                    currentPropstat.calendarHomeSet = decodeHref(text)
+                                }
+                                inCurrentUserPrincipal && currentPropstat != null -> {
+                                    currentPropstat.currentUserPrincipal = decodeHref(text)
+                                }
+                                currentResponse != null && currentResponse.href == null -> {
+                                    currentResponse.href = decodeHref(text)
+                                }
+                            }
+                        }
+                        "status" -> {
+                            val statusText = parser.nextText()
+                            val (code, text) = parseStatus(statusText)
+                            if (currentPropstat != null) {
+                                currentPropstat.statusCode = code
+                                currentPropstat.statusText = text
+                            } else if (currentResponse != null) {
+                                // Response-level status (e.g., 404 for deleted items)
+                                currentResponse.status = code
+                            }
+                        }
+                        "displayname" -> {
+                            if (currentPropstat != null) {
+                                // Use readTextContent to handle potential nested elements defensively
+                                currentPropstat.displayName = readTextContent(parser).takeIf { it.isNotEmpty() }
+                                currentPropstat.addPropertyPresent("displayname")
+                            }
+                        }
+                        "resourcetype" -> {
+                            if (currentPropstat != null) {
+                                inResourceType = true
+                                resourceTypeContent.clear()
+                                currentPropstat.addPropertyPresent("resourcetype")
+                            }
+                        }
+                        "getetag" -> {
+                            if (currentPropstat != null) {
+                                val etag = parser.nextText().trim().removeSurrounding("\"")
+                                currentPropstat.etag = etag
+                                currentPropstat.addPropertyPresent("getetag")
+                            }
+                        }
+                        "getctag" -> {
+                            if (currentPropstat != null) {
+                                currentPropstat.ctag = parser.nextText().trim()
+                                currentPropstat.addPropertyPresent("getctag")
+                            }
+                        }
+                        "sync-token" -> {
+                            val token = parser.nextText().trim()
+                            if (currentPropstat != null) {
+                                currentPropstat.syncToken = token
+                                currentPropstat.addPropertyPresent("sync-token")
+                            } else if (currentResponse == null) {
+                                // Root-level sync-token
+                                rootSyncToken = token
+                            }
+                        }
+                        "calendar-color" -> {
+                            if (currentPropstat != null) {
+                                currentPropstat.calendarColor = parser.nextText().trim().takeIf { it.isNotEmpty() }
+                                currentPropstat.addPropertyPresent("calendar-color")
+                            }
+                        }
+                        "calendar-description" -> {
+                            if (currentPropstat != null) {
+                                currentPropstat.calendarDescription = parser.nextText().trim().takeIf { it.isNotEmpty() }
+                                currentPropstat.addPropertyPresent("calendar-description")
+                            }
+                        }
+                        "current-user-principal" -> {
+                            if (currentPropstat != null) {
+                                inCurrentUserPrincipal = true
+                                currentPropstat.addPropertyPresent("current-user-principal")
+                            }
+                        }
+                        "calendar-home-set" -> {
+                            if (currentPropstat != null) {
+                                inCalendarHomeSet = true
+                                currentPropstat.addPropertyPresent("calendar-home-set")
+                            }
+                        }
+                        "calendar-data" -> {
+                            if (currentPropstat != null) {
+                                // Handle both plain text and CDATA sections
+                                currentPropstat.calendarData = readTextContent(parser).takeIf { it.isNotEmpty() }
+                                currentPropstat.addPropertyPresent("calendar-data")
+                            }
+                        }
+                        "getlastmodified" -> {
+                            if (currentPropstat != null) {
+                                currentPropstat.getLastModified = parser.nextText().trim().takeIf { it.isNotEmpty() }
+                                currentPropstat.addPropertyPresent("getlastmodified")
+                            }
+                        }
+                        "getcontenttype" -> {
+                            if (currentPropstat != null) {
+                                currentPropstat.getContentType = parser.nextText().trim().takeIf { it.isNotEmpty() }
+                                currentPropstat.addPropertyPresent("getcontenttype")
+                            }
+                        }
+                        "getcontentlength" -> {
+                            if (currentPropstat != null) {
+                                currentPropstat.getContentLength = parser.nextText().trim().takeIf { it.isNotEmpty() }
+                                currentPropstat.addPropertyPresent("getcontentlength")
+                            }
+                        }
+                        "supported-calendar-component-set" -> {
+                            if (currentPropstat != null) {
+                                // For now, just track presence; could extract VEVENT/VTODO support
+                                currentPropstat.addPropertyPresent("supported-calendar-component-set")
+                            }
+                        }
+                        // Track resourcetype children
+                        "collection", "calendar", "schedule-inbox", "schedule-outbox" -> {
+                            if (inResourceType) {
+                                resourceTypeContent.append("<$localName/>")
+                            }
+                        }
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    val localName = parser.name.lowercase()
 
-            // Extract status for this propstat block
-            val statusCode = extractStatus(propstatXml)
-            val statusText = extractStatusText(propstatXml)
-            val status = PropertyStatus(statusCode, statusText)
-
-            // Extract all properties from this propstat's prop block
-            val propBlockPattern = Regex(
-                """<(?:[a-zA-Z]+:)?prop[^>]*>(.*?)</(?:[a-zA-Z]+:)?prop>""",
-                setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-            )
-            val propContent = propBlockPattern.find(propstatXml)?.groupValues?.get(1) ?: continue
-
-            // Extract property values for successful status, track status for all
-            extractPropertiesFromBlock(propContent, props, propStatus, status)
-        }
-
-        return DavProperties.from(props, propStatus)
-    }
-
-    /**
-     * Extract properties from a single prop block, recording status for each.
-     */
-    private fun extractPropertiesFromBlock(
-        propContent: String,
-        props: MutableMap<String, String?>,
-        propStatus: MutableMap<String, PropertyStatus>,
-        status: PropertyStatus
-    ) {
-        // Common properties to extract
-        val propertiesToExtract = listOf(
-            "displayname",
-            "resourcetype",
-            "getetag",
-            "getlastmodified",
-            "getcontenttype",
-            "getcontentlength",
-            "current-user-principal",
-            "calendar-home-set",
-            "calendar-color",
-            "calendar-description",
-            "getctag",
-            "sync-token",
-            "supported-calendar-component-set"
-        )
-
-        for (propName in propertiesToExtract) {
-            // Check if this property exists in the block (even if empty/self-closing)
-            if (hasPropertyInBlock(propContent, propName)) {
-                propStatus[propName] = status
-
-                // Only extract values for successful properties
-                if (status.isSuccess) {
-                    val value = extractPropertyValue(propContent, propName)
-                    if (value != null) {
-                        props[propName] = value
+                    when (localName) {
+                        "response" -> {
+                            if (responseDepth == 1 && currentResponse != null) {
+                                // Only add response if it has an href
+                                val response = currentResponse.build()
+                                if (response.href.isNotEmpty()) {
+                                    responses.add(response)
+                                }
+                                currentResponse = null
+                            }
+                            responseDepth--
+                        }
+                        "propstat" -> {
+                            if (currentPropstat != null && currentResponse != null) {
+                                currentResponse.mergePropstat(currentPropstat)
+                                currentPropstat = null
+                            }
+                        }
+                        "resourcetype" -> {
+                            if (currentPropstat != null && inResourceType) {
+                                currentPropstat.resourceType = resourceTypeContent.toString()
+                            }
+                            inResourceType = false
+                        }
+                        "current-user-principal" -> {
+                            inCurrentUserPrincipal = false
+                        }
+                        "calendar-home-set" -> {
+                            inCalendarHomeSet = false
+                        }
                     }
                 }
             }
+            eventType = parser.next()
         }
 
-        // Special handling for resourcetype which contains child elements
-        if (hasPropertyInBlock(propContent, "resourcetype")) {
-            propStatus["resourcetype"] = status
-            if (status.isSuccess) {
-                val resourceTypePattern = Regex(
-                    """<(?:[a-zA-Z]+:)?resourcetype[^>]*>(.*?)</(?:[a-zA-Z]+:)?resourcetype>""",
-                    setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-                )
-                resourceTypePattern.find(propContent)?.groupValues?.get(1)?.let { rtContent ->
-                    props["resourcetype"] = rtContent
+        return ParseResult(responses, rootSyncToken)
+    }
+
+    /**
+     * Strip XML declaration and DOCTYPE from the input.
+     * - XML declaration (<?xml ...?>) causes issues with kxml2
+     * - DOCTYPE stripping prevents XXE (XML External Entity) attacks
+     */
+    private fun stripXmlProlog(xml: String): String {
+        var result = xml.trim()
+
+        // Strip XML declaration: <?xml version="1.0" encoding="UTF-8"?>
+        if (result.startsWith("<?xml")) {
+            result = result.substringAfter("?>").trim()
+        }
+
+        // Strip DOCTYPE (security: prevents XXE attacks)
+        // Handles multi-line DOCTYPE with internal subset: <!DOCTYPE foo [ ... ]>
+        if (result.startsWith("<!DOCTYPE", ignoreCase = true)) {
+            val bracketIndex = result.indexOf('[')
+            val gtIndex = result.indexOf('>')
+
+            if (bracketIndex != -1 && bracketIndex < gtIndex) {
+                // DOCTYPE with internal subset: <!DOCTYPE foo [ ... ]>
+                // Find the closing ]>
+                val closeIndex = result.indexOf("]>")
+                if (closeIndex != -1) {
+                    result = result.substring(closeIndex + 2).trim()
                 }
+            } else if (gtIndex != -1) {
+                // Simple DOCTYPE: <!DOCTYPE foo>
+                result = result.substring(gtIndex + 1).trim()
             }
         }
 
-        // Special handling for href inside current-user-principal
-        if (hasPropertyInBlock(propContent, "current-user-principal")) {
-            propStatus["current-user-principal"] = status
-            if (status.isSuccess) {
-                val principalPattern = Regex(
-                    """<(?:[a-zA-Z]+:)?current-user-principal[^>]*>.*?<(?:[a-zA-Z]+:)?href[^>]*>(.*?)</(?:[a-zA-Z]+:)?href>.*?</(?:[a-zA-Z]+:)?current-user-principal>""",
-                    setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-                )
-                principalPattern.find(propContent)?.groupValues?.get(1)?.trim()?.let { href ->
-                    props["current-user-principal"] = decodeHref(href)
-                }
-            }
-        }
-
-        // Special handling for href inside calendar-home-set
-        if (hasPropertyInBlock(propContent, "calendar-home-set")) {
-            propStatus["calendar-home-set"] = status
-            if (status.isSuccess) {
-                val homeSetPattern = Regex(
-                    """<(?:[a-zA-Z]+:)?calendar-home-set[^>]*>.*?<(?:[a-zA-Z]+:)?href[^>]*>(.*?)</(?:[a-zA-Z]+:)?href>.*?</(?:[a-zA-Z]+:)?calendar-home-set>""",
-                    setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-                )
-                homeSetPattern.find(propContent)?.groupValues?.get(1)?.trim()?.let { href ->
-                    props["calendar-home-set"] = decodeHref(href)
-                }
-            }
-        }
+        return result
     }
 
     /**
-     * Check if a property exists in the prop block (handles self-closing tags).
-     */
-    private fun hasPropertyInBlock(propContent: String, propName: String): Boolean {
-        // Match opening tag (with content) or self-closing tag
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?$propName(?:\s[^>]*)?(?:>|/>)""",
-            RegexOption.IGNORE_CASE
-        )
-        return pattern.containsMatchIn(propContent)
-    }
-
-    /**
-     * Extract status text from propstat status element (e.g., "OK", "Not Found").
-     */
-    private fun extractStatusText(xml: String): String {
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?status[^>]*>HTTP/[\d.]+\s+\d+\s+([^<]+)""",
-            RegexOption.IGNORE_CASE
-        )
-        return pattern.find(xml)?.groupValues?.get(1)?.trim() ?: "OK"
-    }
-
-    /**
-     * Legacy property extraction for backward compatibility.
-     * Used when no propstat elements are found (non-standard response).
-     */
-    private fun extractPropertiesLegacy(xml: String): DavProperties {
-        val props = mutableMapOf<String, String?>()
-
-        // Find all property elements inside <prop> or <D:prop>
-        val propPattern = Regex(
-            """<(?:[a-zA-Z]+:)?prop[^>]*>(.*?)</(?:[a-zA-Z]+:)?prop>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        val propContent = propPattern.find(xml)?.groupValues?.get(1) ?: return DavProperties.EMPTY
-
-        // Common properties to extract
-        val propertiesToExtract = listOf(
-            "displayname",
-            "resourcetype",
-            "getetag",
-            "getlastmodified",
-            "getcontenttype",
-            "getcontentlength",
-            "current-user-principal",
-            "calendar-home-set",
-            "calendar-color",
-            "calendar-description",
-            "getctag",
-            "sync-token",
-            "supported-calendar-component-set"
-        )
-
-        for (propName in propertiesToExtract) {
-            val value = extractPropertyValue(propContent, propName)
-            if (value != null) {
-                props[propName] = value
-            }
-        }
-
-        // Special handling for resourcetype which contains child elements
-        val resourceTypePattern = Regex(
-            """<(?:[a-zA-Z]+:)?resourcetype[^>]*>(.*?)</(?:[a-zA-Z]+:)?resourcetype>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-        resourceTypePattern.find(propContent)?.groupValues?.get(1)?.let { rtContent ->
-            props["resourcetype"] = rtContent
-        }
-
-        // Special handling for href inside current-user-principal
-        val principalPattern = Regex(
-            """<(?:[a-zA-Z]+:)?current-user-principal[^>]*>.*?<(?:[a-zA-Z]+:)?href[^>]*>(.*?)</(?:[a-zA-Z]+:)?href>.*?</(?:[a-zA-Z]+:)?current-user-principal>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-        principalPattern.find(propContent)?.groupValues?.get(1)?.trim()?.let { href ->
-            props["current-user-principal"] = decodeHref(href)
-        }
-
-        // Special handling for href inside calendar-home-set
-        val homeSetPattern = Regex(
-            """<(?:[a-zA-Z]+:)?calendar-home-set[^>]*>.*?<(?:[a-zA-Z]+:)?href[^>]*>(.*?)</(?:[a-zA-Z]+:)?href>.*?</(?:[a-zA-Z]+:)?calendar-home-set>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-        homeSetPattern.find(propContent)?.groupValues?.get(1)?.trim()?.let { href ->
-            props["calendar-home-set"] = decodeHref(href)
-        }
-
-        return DavProperties.from(props)
-    }
-
-    /**
-     * Extract a single property value by name.
-     */
-    private fun extractPropertyValue(propContent: String, propName: String): String? {
-        // Handle namespaced property names (e.g., cs:getctag, C:calendar-data)
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?$propName[^/>]*>([^<]*)</(?:[a-zA-Z]+:)?$propName>""",
-            setOf(RegexOption.IGNORE_CASE)
-        )
-        return pattern.find(propContent)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
-    }
-
-    /**
-     * Extract ETag from response (handles quoted and unquoted).
-     */
-    private fun extractEtag(xml: String): String? {
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?getetag[^>]*>([^<]+)</(?:[a-zA-Z]+:)?getetag>""",
-            RegexOption.IGNORE_CASE
-        )
-        return pattern.find(xml)?.groupValues?.get(1)?.trim()
-            ?.let { decodeXmlEntities(it) }
-            ?.removeSurrounding("\"")  // Remove quotes after decoding entities
-    }
-
-    /**
-     * Decode XML/HTML entities in a string.
-     * Handles: &quot; &amp; &lt; &gt; &apos;
-     */
-    private fun decodeXmlEntities(text: String): String {
-        return text
-            .replace("&quot;", "\"")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&apos;", "'")
-    }
-
-    /**
-     * Extract calendar-data (iCal content) from response.
-     * This is CalDAV-specific (RFC 4791).
+     * Read text content from current element, handling:
+     * - Plain text
+     * - CDATA sections
+     * - Unexpected nested elements (treated as text for security/compatibility)
      *
-     * Handles CDATA sections which some servers (including iCloud) use to wrap
-     * calendar data: <C:calendar-data><![CDATA[BEGIN:VCALENDAR...]]></C:calendar-data>
+     * After this method, the parser will be positioned at the END_TAG.
      */
-    private fun extractCalendarData(xml: String): String? {
-        // <C:calendar-data>BEGIN:VCALENDAR...</C:calendar-data>
-        // or <calendar-data>...</calendar-data>
-        // Also handles CDATA: <C:calendar-data><![CDATA[BEGIN:VCALENDAR...]]></C:calendar-data>
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?calendar-data[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</(?:[a-zA-Z]+:)?calendar-data>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-        return pattern.find(xml)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+    private fun readTextContent(parser: XmlPullParser): String {
+        val content = StringBuilder()
+        var depth = 1  // We're inside the starting element
+        var eventType = parser.next()
+
+        while (depth > 0) {
+            when (eventType) {
+                XmlPullParser.TEXT -> content.append(parser.text)
+                XmlPullParser.CDSECT -> content.append(parser.text)
+                XmlPullParser.START_TAG -> {
+                    // Unexpected nested element - include as text for compatibility
+                    content.append("<").append(parser.name)
+                    for (i in 0 until parser.attributeCount) {
+                        content.append(" ").append(parser.getAttributeName(i))
+                            .append("=\"").append(parser.getAttributeValue(i)).append("\"")
+                    }
+                    content.append(">")
+                    depth++
+                }
+                XmlPullParser.END_TAG -> {
+                    depth--
+                    if (depth > 0) {
+                        // Closing an unexpected nested element
+                        content.append("</").append(parser.name).append(">")
+                    }
+                }
+            }
+            if (depth > 0) {
+                eventType = parser.next()
+            }
+        }
+
+        return content.toString().trim()
     }
 
     /**
-     * Extract sync-token from multistatus root element.
+     * Parse HTTP status line into code and text.
      */
-    private fun extractSyncToken(xml: String): String? {
-        val pattern = Regex(
-            """<(?:[a-zA-Z]+:)?sync-token[^>]*>([^<]+)</(?:[a-zA-Z]+:)?sync-token>""",
-            RegexOption.IGNORE_CASE
-        )
-        return pattern.find(xml)?.groupValues?.get(1)?.trim()
+    private fun parseStatus(statusLine: String): Pair<Int, String> {
+        val match = Regex("""HTTP/[\d.]+\s+(\d+)\s*(.*)""").find(statusLine)
+        val code = match?.groupValues?.get(1)?.toIntOrNull() ?: 200
+        val text = match?.groupValues?.get(2)?.trim()?.takeIf { it.isNotEmpty() } ?: "OK"
+        return Pair(code, text)
     }
 
     /**
@@ -399,6 +356,92 @@ class MultiStatusParser {
             java.net.URLDecoder.decode(href.replace("+", "%2B"), "UTF-8")
         } catch (e: Exception) {
             href // Return as-is if decoding fails
+        }
+    }
+
+    /**
+     * Builder for accumulating response data.
+     */
+    private class ResponseBuilder {
+        var href: String? = null
+        var status: Int = 200
+
+        // Properties accumulated from all propstats
+        private val props = mutableMapOf<String, String?>()
+        private val propStatus = mutableMapOf<String, PropertyStatus>()
+
+        // Direct properties from propstats
+        var etag: String? = null
+        var calendarData: String? = null
+
+        fun mergePropstat(propstat: PropstatBuilder) {
+            val status = PropertyStatus(propstat.statusCode, propstat.statusText)
+
+            // Track status for all present properties
+            for (propName in propstat.propertiesPresent) {
+                propStatus[propName] = status
+            }
+
+            // Only merge values for successful propstats
+            if (status.isSuccess) {
+                propstat.displayName?.let { props["displayname"] = it }
+                propstat.resourceType?.let { props["resourcetype"] = it }
+                propstat.ctag?.let { props["getctag"] = it }
+                propstat.syncToken?.let { props["sync-token"] = it }
+                propstat.calendarColor?.let { props["calendar-color"] = it }
+                propstat.calendarDescription?.let { props["calendar-description"] = it }
+                propstat.currentUserPrincipal?.let { props["current-user-principal"] = it }
+                propstat.calendarHomeSet?.let { props["calendar-home-set"] = it }
+                propstat.getLastModified?.let { props["getlastmodified"] = it }
+                propstat.getContentType?.let { props["getcontenttype"] = it }
+                propstat.getContentLength?.let { props["getcontentlength"] = it }
+
+                // etag and calendarData are also set on response directly
+                propstat.etag?.let {
+                    props["getetag"] = it
+                    etag = it
+                }
+                propstat.calendarData?.let { calendarData = it }
+            }
+        }
+
+        fun build(): DavResponse {
+            return DavResponse(
+                href = href ?: "",
+                status = status,
+                properties = DavProperties.from(props, propStatus),
+                etag = etag,
+                calendarData = calendarData
+            )
+        }
+    }
+
+    /**
+     * Builder for accumulating propstat data.
+     */
+    private class PropstatBuilder {
+        var statusCode: Int = 200
+        var statusText: String = "OK"
+
+        var displayName: String? = null
+        var resourceType: String? = null
+        var etag: String? = null
+        var ctag: String? = null
+        var syncToken: String? = null
+        var calendarColor: String? = null
+        var calendarDescription: String? = null
+        var currentUserPrincipal: String? = null
+        var calendarHomeSet: String? = null
+        var calendarData: String? = null
+        var getLastModified: String? = null
+        var getContentType: String? = null
+        var getContentLength: String? = null
+
+        // Track which properties are present (even if empty or 404)
+        val propertiesPresent = mutableSetOf<String>()
+
+        fun addPropertyPresent(name: String) {
+            propertiesPresent.add(name)
         }
     }
 

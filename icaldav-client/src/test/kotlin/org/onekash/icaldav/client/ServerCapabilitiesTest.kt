@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import kotlinx.coroutines.test.runTest
 import org.onekash.icaldav.model.DavResult
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -46,7 +47,7 @@ class ServerCapabilitiesTest {
     inner class WebDavClientOptionsTests {
 
         @Test
-        fun `parses DAV header with calendar-access`() {
+        fun `parses DAV header with calendar-access`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, 2, calendar-access, addressbook")
@@ -63,7 +64,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `parses DAV header with sync-collection`() {
+        fun `parses DAV header with sync-collection`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, 2, 3, calendar-access, sync-collection")
@@ -77,7 +78,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `detects sync-collection from DAV class 3`() {
+        fun `detects sync-collection from DAV class 3`() = runTest {
             // Some servers advertise class 3 instead of sync-collection
             server.enqueue(MockResponse()
                 .setResponseCode(200)
@@ -92,7 +93,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `parses Allow header for methods`() {
+        fun `parses Allow header for methods`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, calendar-access")
@@ -111,7 +112,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `handles 405 Method Not Allowed gracefully`() {
+        fun `handles 405 Method Not Allowed gracefully`() = runTest {
             // Some servers don't support OPTIONS
             server.enqueue(MockResponse().setResponseCode(405))
 
@@ -126,7 +127,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `returns error for auth failures`() {
+        fun `returns error for auth failures`() = runTest {
             server.enqueue(MockResponse().setResponseCode(401))
 
             val result = webDavClient.options(serverUrl())
@@ -137,7 +138,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `handles missing DAV header`() {
+        fun `handles missing DAV header`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("Allow", "GET, PUT"))
@@ -152,7 +153,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `handles missing Allow header`() {
+        fun `handles missing Allow header`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, calendar-access"))
@@ -166,7 +167,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `preserves raw DAV header for debugging`() {
+        fun `preserves raw DAV header for debugging`() = runTest {
             val rawDav = "1, 2, calendar-access, extended-mkcol"
             server.enqueue(MockResponse()
                 .setResponseCode(200)
@@ -181,7 +182,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `handles angle brackets in DAV header`() {
+        fun `handles angle brackets in DAV header`() = runTest {
             // Some servers wrap values in angle brackets
             server.enqueue(MockResponse()
                 .setResponseCode(200)
@@ -284,7 +285,7 @@ class ServerCapabilitiesTest {
     inner class CalDavClientCachingTests {
 
         @Test
-        fun `caches capabilities on first call`() {
+        fun `caches capabilities on first call`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, calendar-access")
@@ -304,7 +305,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `forceRefresh bypasses cache`() {
+        fun `forceRefresh bypasses cache`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, calendar-access")
@@ -329,7 +330,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `clearCapabilitiesCache removes cached entries`() {
+        fun `clearCapabilitiesCache removes cached entries`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1")
@@ -355,7 +356,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `caches per URL`() {
+        fun `caches per URL`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, calendar-access")
@@ -382,7 +383,7 @@ class ServerCapabilitiesTest {
     inner class SyncCollectionIfSupportedTests {
 
         @Test
-        fun `returns null when sync-collection not supported`() {
+        fun `returns null when sync-collection not supported`() = runTest {
             // OPTIONS response without sync-collection
             server.enqueue(MockResponse()
                 .setResponseCode(200)
@@ -398,7 +399,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `calls syncCollection when supported`() {
+        fun `calls syncCollection when supported`() = runTest {
             // OPTIONS response with sync-collection
             server.enqueue(MockResponse()
                 .setResponseCode(200)
@@ -428,7 +429,7 @@ class ServerCapabilitiesTest {
     inner class RealServerResponseTests {
 
         @Test
-        fun `parses iCloud-style DAV header`() {
+        fun `parses iCloud-style DAV header`() = runTest {
             // iCloud returns this format
             server.enqueue(MockResponse()
                 .setResponseCode(200)
@@ -448,7 +449,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `parses Nextcloud-style DAV header`() {
+        fun `parses Nextcloud-style DAV header`() = runTest {
             server.enqueue(MockResponse()
                 .setResponseCode(200)
                 .setHeader("DAV", "1, 3, extended-mkcol, addressbook, calendar-access, calendar-auto-schedule, calendarserver-subscribed, calendar-availability, nc-calendar-webcal-cache, calendarserver-sharing, calendarserver-principal-property-search, calendar-proxy")
@@ -465,7 +466,7 @@ class ServerCapabilitiesTest {
         }
 
         @Test
-        fun `parses minimal CalDAV server`() {
+        fun `parses minimal CalDAV server`() = runTest {
             // Minimal server with basic CalDAV support
             server.enqueue(MockResponse()
                 .setResponseCode(200)

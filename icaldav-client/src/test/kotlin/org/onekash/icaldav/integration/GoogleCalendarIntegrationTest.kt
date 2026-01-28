@@ -8,6 +8,8 @@ import org.onekash.icaldav.model.DavResult
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.MethodOrderer.OrderAnnotation
@@ -109,8 +111,8 @@ class GoogleCalendarIntegrationTest {
     }
 
     @AfterAll
-    fun cleanup() {
-        if (!canRunTests) return
+    fun cleanup() = runBlocking {
+        if (!canRunTests) return@runBlocking
 
         println("\n=== Cleaning up ${createdEventUrls.size} test events ===")
         createdEventUrls.forEach { url ->
@@ -204,7 +206,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(1)
-    fun `001 Create event on Google Calendar`() {
+    fun `001 Create event on Google Calendar`() = runTest {
         skipIfNotConfigured()
 
         val (uid, icalData) = createTestEventIcal(
@@ -226,7 +228,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(2)
-    fun `002 Fetch created event`() {
+    fun `002 Fetch created event`() = runTest {
         skipIfNotConfigured()
 
         if (createdEventUrls.isEmpty()) {
@@ -245,7 +247,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(3)
-    fun `003 Update event on Google Calendar`() {
+    fun `003 Update event on Google Calendar`() = runTest {
         skipIfNotConfigured()
 
         if (createdEventUrls.isEmpty() || createdEventUids.isEmpty()) {
@@ -278,7 +280,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(4)
-    fun `004 Delete event from Google Calendar`() {
+    fun `004 Delete event from Google Calendar`() = runTest {
         skipIfNotConfigured()
 
         // Create a new event specifically for deletion
@@ -312,7 +314,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(10)
-    fun `010 Get ctag from Google Calendar`() {
+    fun `010 Get ctag from Google Calendar`() = runTest {
         skipIfNotConfigured()
 
         val result = client.getCtag(calendarUrl)
@@ -335,7 +337,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(11)
-    fun `011 Get sync token from Google Calendar`() {
+    fun `011 Get sync token from Google Calendar`() = runTest {
         skipIfNotConfigured()
 
         val result = client.getSyncToken(calendarUrl)
@@ -357,7 +359,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(12)
-    fun `012 Fetch etags in time range`() {
+    fun `012 Fetch etags in time range`() = runTest {
         skipIfNotConfigured()
 
         // First create an event we know exists
@@ -395,7 +397,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(13)
-    fun `013 Sync collection with sync token`() {
+    fun `013 Sync collection with sync token`() = runTest {
         skipIfNotConfigured()
 
         // Get initial sync token
@@ -404,7 +406,7 @@ class GoogleCalendarIntegrationTest {
 
         if (syncToken == null) {
             println("Sync token not available, skipping sync-collection test")
-            return
+            return@runTest
         }
 
         // Create a new event
@@ -418,7 +420,7 @@ class GoogleCalendarIntegrationTest {
         createdEventUrls.add(href)
 
         // Sync from previous token
-        val syncResult = client.syncCollection(calendarUrl, syncToken)
+        val syncResult = client.syncCollection(calendarUrl, syncToken!!)
         println("Sync result: $syncResult")
 
         when (syncResult) {
@@ -443,7 +445,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(20)
-    fun `020 All-day event`() {
+    fun `020 All-day event`() = runTest {
         skipIfNotConfigured()
 
         val uid = generateTestUid()
@@ -472,7 +474,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(21)
-    fun `021 Recurring event`() {
+    fun `021 Recurring event`() = runTest {
         skipIfNotConfigured()
 
         val uid = generateTestUid()
@@ -507,7 +509,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(22)
-    fun `022 Event with attendees`() {
+    fun `022 Event with attendees`() = runTest {
         skipIfNotConfigured()
 
         val uid = generateTestUid()
@@ -558,7 +560,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(23)
-    fun `023 Event with alarm`() {
+    fun `023 Event with alarm`() = runTest {
         skipIfNotConfigured()
 
         val uid = generateTestUid()
@@ -601,7 +603,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(30)
-    fun `030 Get non-existent event returns 404`() {
+    fun `030 Get non-existent event returns 404`() = runTest {
         skipIfNotConfigured()
 
         val fakeUrl = "${calendarUrl}non-existent-event-${UUID.randomUUID()}.ics"
@@ -617,7 +619,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(31)
-    fun `031 Update with wrong etag fails`() {
+    fun `031 Update with wrong etag fails`() = runTest {
         skipIfNotConfigured()
 
         // Create event
@@ -642,7 +644,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(32)
-    fun `032 Invalid authentication fails`() {
+    fun `032 Invalid authentication fails`() = runTest {
         // Create client with invalid token
         val invalidAuth = DavAuth.Bearer("invalid-token")
         val httpClient = WebDavClient.withAuth(invalidAuth)
@@ -665,7 +667,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(40)
-    fun `040 MKCALENDAR is not supported`() {
+    fun `040 MKCALENDAR is not supported`() = runTest {
         skipIfNotConfigured()
 
         // Google doesn't support MKCALENDAR
@@ -676,7 +678,7 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(41)
-    fun `041 VTODO is not supported`() {
+    fun `041 VTODO is not supported`() = runTest {
         skipIfNotConfigured()
 
         val uid = generateTestUid()
@@ -719,13 +721,13 @@ class GoogleCalendarIntegrationTest {
 
     @Test
     @Order(999)
-    fun `999 Test summary`() {
+    fun `999 Test summary`() = runTest {
         if (!canRunTests) {
             println("\n========================================")
             println("GOOGLE CALENDAR TESTS SKIPPED")
             println("Reason: $skipReason")
             println("========================================")
-            return
+            return@runTest
         }
 
         println("\n========================================")

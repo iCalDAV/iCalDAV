@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.DisplayName
+import kotlinx.coroutines.test.runTest
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -63,7 +64,7 @@ class CalDavClientNewFeaturesTest {
     inner class FetchEtagsInRangeTests {
 
         @Test
-        fun `B1-1 returns etags without calendar-data`() {
+        fun `B1-1 returns etags without calendar-data`() = runTest {
             // Server returns etags only (no calendar-data) - lightweight response
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -116,7 +117,7 @@ class CalDavClientNewFeaturesTest {
         }
 
         @Test
-        fun `B1-2 respects time range filter`() {
+        fun `B1-2 respects time range filter`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -142,7 +143,7 @@ class CalDavClientNewFeaturesTest {
         }
 
         @Test
-        fun `B1-3 handles empty response`() {
+        fun `B1-3 handles empty response`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -166,7 +167,7 @@ class CalDavClientNewFeaturesTest {
         }
 
         @Test
-        fun `B1-4 handles server error`() {
+        fun `B1-4 handles server error`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(500)
@@ -183,7 +184,7 @@ class CalDavClientNewFeaturesTest {
         }
 
         @Test
-        fun `B1-5 handles iCloud quoted etags`() {
+        fun `B1-5 handles iCloud quoted etags`() = runTest {
             // iCloud returns etags with surrounding quotes which we strip
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -229,7 +230,7 @@ class CalDavClientNewFeaturesTest {
     inner class GetSyncTokenTests {
 
         @Test
-        fun `B2-1 returns sync token from PROPFIND`() {
+        fun `B2-1 returns sync token from PROPFIND`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -258,7 +259,7 @@ class CalDavClientNewFeaturesTest {
         }
 
         @Test
-        fun `B2-2 returns null when sync token not supported`() {
+        fun `B2-2 returns null when sync token not supported`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <D:multistatus xmlns:D="DAV:">
@@ -294,7 +295,7 @@ class CalDavClientNewFeaturesTest {
     inner class DuplicateHrefTests {
 
         @Test
-        fun `B6-1 syncCollection deduplicates duplicate hrefs from iCloud`() {
+        fun `B6-1 syncCollection deduplicates duplicate hrefs from iCloud`() = runTest {
             // iCloud sometimes returns duplicate hrefs in sync-collection
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>

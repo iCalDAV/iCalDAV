@@ -373,8 +373,8 @@ jobs:
             ./gradlew :icaldav-android:installDebugAndroidTest
             adb shell pm grant org.onekash.icaldav.android.test android.permission.READ_CALENDAR
             adb shell pm grant org.onekash.icaldav.android.test android.permission.WRITE_CALENDAR
-            # Run instrumented tests (CalDAV integration tests will be skipped without credentials)
-            ./gradlew :icaldav-android:connectedAndroidTest --stacktrace
+            # Run instrumented tests (exclude CalendarProviderIntegrationTest which requires CalDAV credentials)
+            ./gradlew :icaldav-android:connectedAndroidTest --stacktrace -PexcludeIntegrationTests=true
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4

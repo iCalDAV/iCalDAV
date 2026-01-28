@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import kotlinx.coroutines.test.runTest
 import org.onekash.icaldav.model.*
 import org.onekash.icaldav.parser.ICalGenerator
 import kotlin.test.assertEquals
@@ -141,7 +142,7 @@ class TodoJournalClientTest {
     inner class FetchTodosTests {
 
         @Test
-        fun `fetchTodos parses VTODO from REPORT response`() {
+        fun `fetchTodos parses VTODO from REPORT response`() = runTest {
             val vtodoIcs = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -189,7 +190,7 @@ class TodoJournalClientTest {
         }
 
         @Test
-        fun `fetchTodos handles empty response`() {
+        fun `fetchTodos handles empty response`() = runTest {
             val xmlResponse = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
@@ -215,7 +216,7 @@ class TodoJournalClientTest {
     inner class FetchJournalsTests {
 
         @Test
-        fun `fetchJournals parses VJOURNAL from REPORT response`() {
+        fun `fetchJournals parses VJOURNAL from REPORT response`() = runTest {
             val vjournalIcs = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
@@ -268,7 +269,7 @@ class TodoJournalClientTest {
     inner class CreateTodoTests {
 
         @Test
-        fun `createTodo sends PUT request with generated ICS`() {
+        fun `createTodo sends PUT request with generated ICS`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(201)
@@ -298,7 +299,7 @@ class TodoJournalClientTest {
     inner class CreateJournalTests {
 
         @Test
-        fun `createJournal sends PUT request with generated ICS`() {
+        fun `createJournal sends PUT request with generated ICS`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(201)
@@ -328,7 +329,7 @@ class TodoJournalClientTest {
     inner class UpdateTodoTests {
 
         @Test
-        fun `updateTodo sends PUT with If-Match header`() {
+        fun `updateTodo sends PUT with If-Match header`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(204)
@@ -362,7 +363,7 @@ class TodoJournalClientTest {
     inner class UpdateJournalTests {
 
         @Test
-        fun `updateJournal sends PUT with If-Match header`() {
+        fun `updateJournal sends PUT with If-Match header`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(204)
@@ -396,7 +397,7 @@ class TodoJournalClientTest {
     inner class DeleteTodoTests {
 
         @Test
-        fun `deleteTodo sends DELETE request`() {
+        fun `deleteTodo sends DELETE request`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(204)
@@ -416,7 +417,7 @@ class TodoJournalClientTest {
         }
 
         @Test
-        fun `deleteTodo without etag`() {
+        fun `deleteTodo without etag`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(204)
@@ -440,7 +441,7 @@ class TodoJournalClientTest {
     inner class DeleteJournalTests {
 
         @Test
-        fun `deleteJournal sends DELETE request`() {
+        fun `deleteJournal sends DELETE request`() = runTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(204)

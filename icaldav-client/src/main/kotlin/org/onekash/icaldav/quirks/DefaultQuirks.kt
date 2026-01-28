@@ -1,5 +1,6 @@
 package org.onekash.icaldav.quirks
 
+import org.onekash.icaldav.xml.XmlParserUtils
 import java.util.Calendar
 import java.util.TimeZone
 
@@ -14,10 +15,19 @@ import java.util.TimeZone
  * Use this for servers like Nextcloud, Radicale, Baïkal, and other
  * standards-compliant CalDAV implementations.
  *
+ * Uses XmlPullParser for efficient parsing with automatic entity decoding.
+ *
  * @param providerId Unique identifier for this provider
  * @param displayName Human-readable name
  * @param baseUrl Base CalDAV URL
+ *
+ * @see CalDavProvider for the recommended replacement
  */
+@Deprecated(
+    message = "Use CalDavProvider.generic(baseUrl) instead",
+    replaceWith = ReplaceWith("CalDavProvider.generic(baseUrl)", "org.onekash.icaldav.quirks.CalDavProvider")
+)
+@Suppress("DEPRECATION")  // We need to implement the deprecated interface
 class DefaultQuirks(
     override val providerId: String = "generic",
     override val displayName: String = "CalDAV Server",
@@ -27,139 +37,46 @@ class DefaultQuirks(
     override val requiresAppSpecificPassword = false
 
     override fun extractPrincipalUrl(responseBody: String): String? {
-        // Standard DAV namespace patterns
-        val patterns = listOf(
-            """<d:current-user-principal>\s*<d:href>([^<]+)</d:href>\s*</d:current-user-principal>""",
-            """<D:current-user-principal>\s*<D:href>([^<]+)</D:href>\s*</D:current-user-principal>""",
-            """<current-user-principal[^>]*>\s*<href[^>]*>([^<]+)</href>\s*</current-user-principal>""",
-            """current-user-principal.*?<.*?href[^>]*>([^<]+)</"""
-        )
-
-        for (pattern in patterns) {
-            val regex = Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            val match = regex.find(responseBody)
-            if (match != null) {
-                return match.groupValues[1]
-            }
-        }
-        return null
+        return XmlParserUtils.extractHrefFromContainer(responseBody, "current-user-principal")
     }
 
     override fun extractCalendarHomeUrl(responseBody: String): String? {
-        val patterns = listOf(
-            """<c:calendar-home-set>\s*<d:href>([^<]+)</d:href>\s*</c:calendar-home-set>""",
-            """<C:calendar-home-set>\s*<D:href>([^<]+)</D:href>\s*</C:calendar-home-set>""",
-            """<calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</href>\s*</calendar-home-set>""",
-            """calendar-home-set.*?<.*?href[^>]*>([^<]+)</"""
-        )
-
-        for (pattern in patterns) {
-            val regex = Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            val match = regex.find(responseBody)
-            if (match != null) {
-                return match.groupValues[1]
-            }
-        }
-        return null
+        return XmlParserUtils.extractHrefFromContainer(responseBody, "calendar-home-set")
     }
 
     override fun extractCalendars(responseBody: String, baseHost: String): List<CalDavQuirks.ParsedCalendar> {
-        val calendars = mutableListOf<CalDavQuirks.ParsedCalendar>()
-
-        val responseRegex = Regex(
-            """<(?:d:|D:)?response[^>]*>(.*?)</(?:d:|D:)?response>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        for (match in responseRegex.findAll(responseBody)) {
-            val responseXml = match.groupValues[1]
-
-            // Check if it's a calendar (has <calendar> inside <resourcetype>)
-            // Must check resourcetype specifically to avoid matching <calendar-color> etc.
-            val isCalendar = hasCalendarResourceType(responseXml)
-
-            if (isCalendar) {
-                val href = extractHref(responseXml) ?: continue
-                val displayName = extractDisplayName(responseXml) ?: "Unnamed"
-
-                if (shouldSkipCalendar(href, displayName)) continue
-
-                val color = extractCalendarColor(responseXml)
-                val ctag = extractCtagFromResponse(responseXml)
-
-                calendars.add(
-                    CalDavQuirks.ParsedCalendar(
-                        href = href,
-                        displayName = displayName,
-                        color = color,
-                        ctag = ctag,
-                        isReadOnly = false
-                    )
+        return XmlParserUtils.parseResponses(responseBody)
+            .filter { it.hasCalendarResourceType }
+            .filterNot { shouldSkipCalendar(it.href, it.displayName) }
+            .map { response ->
+                CalDavQuirks.ParsedCalendar(
+                    href = response.href,
+                    displayName = response.displayName ?: "Unnamed",
+                    color = response.calendarColor,
+                    ctag = response.ctag,
+                    isReadOnly = response.isReadOnly
                 )
             }
-        }
-
-        return calendars
     }
 
     override fun extractICalData(responseBody: String): List<CalDavQuirks.ParsedEventData> {
-        val events = mutableListOf<CalDavQuirks.ParsedEventData>()
-
-        val responseRegex = Regex(
-            """<(?:d:|D:)?response[^>]*>(.*?)</(?:d:|D:)?response>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        for (match in responseRegex.findAll(responseBody)) {
-            val responseXml = match.groupValues[1]
-            val href = extractHref(responseXml) ?: continue
-            val etag = extractEtag(responseXml)
-            val icalData = extractCalendarData(responseXml)
-
-            if (icalData != null && icalData.contains("BEGIN:VCALENDAR")) {
-                events.add(
-                    CalDavQuirks.ParsedEventData(
-                        href = href,
-                        etag = etag,
-                        icalData = icalData
-                    )
+        return XmlParserUtils.parseResponses(responseBody)
+            .filter { it.calendarData?.contains("BEGIN:VCALENDAR") == true }
+            .map { response ->
+                CalDavQuirks.ParsedEventData(
+                    href = response.href,
+                    etag = response.etag,
+                    icalData = response.calendarData!!
                 )
             }
-        }
-
-        return events
     }
 
     override fun extractSyncToken(responseBody: String): String? {
-        val patterns = listOf(
-            """<(?:d:|D:)?sync-token[^>]*>([^<]+)</(?:d:|D:)?sync-token>""",
-            """<sync-token[^>]*>([^<]+)</sync-token>"""
-        )
-
-        for (pattern in patterns) {
-            val regex = Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            val match = regex.find(responseBody)
-            if (match != null) {
-                return match.groupValues[1].trim()
-            }
-        }
-        return null
+        return XmlParserUtils.extractElementText(responseBody, "sync-token")
     }
 
     override fun extractCtag(responseBody: String): String? {
-        val patterns = listOf(
-            """<(?:cs:|CS:)?getctag[^>]*>([^<]+)</(?:cs:|CS:)?getctag>""",
-            """<getctag[^>]*>([^<]+)</getctag>"""
-        )
-
-        for (pattern in patterns) {
-            val regex = Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            val match = regex.find(responseBody)
-            if (match != null) {
-                return match.groupValues[1].trim()
-            }
-        }
-        return null
+        return XmlParserUtils.extractElementText(responseBody, "getctag")
     }
 
     override fun buildCalendarUrl(href: String, baseHost: String): String {
@@ -192,56 +109,15 @@ class DefaultQuirks(
     }
 
     override fun extractDeletedHrefs(responseBody: String): List<String> {
-        val deletedHrefs = mutableListOf<String>()
-
-        val responseRegex = Regex(
-            """<(?:d:|D:)?response[^>]*>(.*?)</(?:d:|D:)?response>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        for (match in responseRegex.findAll(responseBody)) {
-            val responseXml = match.groupValues[1]
-
-            val isDeleted = responseXml.contains("HTTP/1.1 404", ignoreCase = true) ||
-                responseXml.contains("404 Not Found", ignoreCase = true) ||
-                responseXml.contains("<status>HTTP/1.1 404", ignoreCase = true)
-
-            if (isDeleted) {
-                val href = extractHref(responseXml)
-                if (href != null) {
-                    deletedHrefs.add(href)
-                }
-            }
-        }
-
-        return deletedHrefs
+        return XmlParserUtils.parseResponses(responseBody)
+            .filter { it.status == 404 }
+            .map { it.href }
     }
 
     override fun extractChangedItems(responseBody: String): List<Pair<String, String?>> {
-        val items = mutableListOf<Pair<String, String?>>()
-
-        val responseRegex = Regex(
-            """<(?:d:|D:)?response[^>]*>(.*?)</(?:d:|D:)?response>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        for (match in responseRegex.findAll(responseBody)) {
-            val responseXml = match.groupValues[1]
-
-            // Skip deleted items
-            if (responseXml.contains("HTTP/1.1 404", ignoreCase = true) ||
-                responseXml.contains("404 Not Found", ignoreCase = true)) {
-                continue
-            }
-
-            val href = extractHref(responseXml) ?: continue
-            if (!href.endsWith(".ics")) continue
-
-            val etag = extractEtag(responseXml)
-            items.add(Pair(href, etag))
-        }
-
-        return items
+        return XmlParserUtils.parseResponses(responseBody)
+            .filter { it.status != 404 && it.href.endsWith(".ics") }
+            .map { Pair(it.href, it.etag) }
     }
 
     override fun shouldSkipCalendar(href: String, displayName: String?): Boolean {
@@ -268,70 +144,6 @@ class DefaultQuirks(
         )
     }
 
-    // Private helper methods
-
-    private fun extractHref(xml: String): String? {
-        val regex = Regex("""<(?:d:|D:)?href[^>]*>([^<]+)</(?:d:|D:)?href>""", RegexOption.IGNORE_CASE)
-        return regex.find(xml)?.groupValues?.get(1)
-    }
-
-    private fun extractDisplayName(xml: String): String? {
-        val regex = Regex("""<(?:d:|D:)?displayname[^>]*>([^<]*)</(?:d:|D:)?displayname>""", RegexOption.IGNORE_CASE)
-        return regex.find(xml)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
-    }
-
-    private fun extractCalendarColor(xml: String): String? {
-        // Match calendar-color with any namespace prefix (ic:, x1:, etc.)
-        // Examples: <ic:calendar-color>, <x1:calendar-color xmlns:x1="...">, <calendar-color>
-        val patterns = listOf(
-            """<(?:\w+:)?calendar-color[^>]*>([^<]+)</""",
-            """<(?:x-)?apple-calendar-color[^>]*>([^<]+)</"""
-        )
-        for (pattern in patterns) {
-            val regex = Regex(pattern, RegexOption.IGNORE_CASE)
-            val match = regex.find(xml)
-            if (match != null) {
-                return match.groupValues[1].takeIf { it.isNotBlank() }
-            }
-        }
-        return null
-    }
-
-    private fun extractCtagFromResponse(xml: String): String? {
-        val regex = Regex("""<(?:cs:|CS:)?getctag[^>]*>([^<]+)</""", RegexOption.IGNORE_CASE)
-        return regex.find(xml)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
-    }
-
-    private fun extractEtag(xml: String): String? {
-        val regex = Regex("""<(?:d:|D:)?getetag[^>]*>"?([^"<]+)"?</""", RegexOption.IGNORE_CASE)
-        return regex.find(xml)?.groupValues?.get(1)?.trim('"')
-    }
-
-    private fun extractCalendarData(xml: String): String? {
-        val patterns = listOf(
-            // CDATA format
-            """<(?:c:|C:|cal:)?calendar-data[^>]*><!\[CDATA\[(.*?)\]\]></(?:c:|C:|cal:)?calendar-data>""",
-            // Standard format
-            """<(?:c:|C:|cal:)?calendar-data[^>]*>(.*?)</(?:c:|C:|cal:)?calendar-data>"""
-        )
-
-        for (pattern in patterns) {
-            val regex = Regex(pattern, setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-            val match = regex.find(xml)
-            if (match != null) {
-                val data = match.groupValues[1]
-                    .replace("&lt;", "<")
-                    .replace("&gt;", ">")
-                    .replace("&amp;", "&")
-                    .trim()
-                if (data.contains("BEGIN:VCALENDAR")) {
-                    return data
-                }
-            }
-        }
-        return null
-    }
-
     private fun extractBaseHost(url: String): String {
         return if (url.contains("://")) {
             val afterProtocol = url.substringAfter("://")
@@ -340,33 +152,5 @@ class DefaultQuirks(
         } else {
             url.substringBefore("/")
         }
-    }
-
-    /**
-     * Check if response has calendar resourcetype.
-     *
-     * Looks specifically for <calendar.../> inside <resourcetype>.
-     * This avoids false positives from other tags like <calendar-color> which may
-     * appear in 404 propstat sections for non-calendar collections.
-     *
-     * Examples:
-     * - Calendar: <resourcetype><collection/><cal:calendar/></resourcetype>
-     * - Calendar: <resourcetype><collection/><c:calendar/></resourcetype>
-     * - Calendar: <resourcetype><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
-     * - Root collection: <resourcetype><collection/></resourcetype> (no calendar)
-     */
-    private fun hasCalendarResourceType(xml: String): Boolean {
-        // Extract resourcetype element first
-        val resourceTypeRegex = Regex(
-            """<(?:d:|D:)?resourcetype[^>]*>(.*?)</(?:d:|D:)?resourcetype>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-        val resourceTypeMatch = resourceTypeRegex.find(xml) ?: return false
-        val resourceTypeContent = resourceTypeMatch.groupValues[1]
-
-        // Check for calendar element inside resourcetype with any namespace prefix
-        // Matches: <calendar/>, <c:calendar/>, <cal:calendar/>, <C:calendar/>, etc.
-        val calendarRegex = Regex("""<(?:\w+:)?calendar[\s/>]""", RegexOption.IGNORE_CASE)
-        return calendarRegex.containsMatchIn(resourceTypeContent)
     }
 }
